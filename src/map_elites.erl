@@ -13,8 +13,10 @@
 %%%    The tuples {A, B} returned must satisfy A < B.
 -module(map_elites).
 
--export([start/5]).
+-export([start/4]).
 -export([worker/2]).
+
+-define(MAP_GRANULARITY, 512).
 
 -type genotype()  :: term().
 -type phenotype() :: {genotype(), term()}.
@@ -25,7 +27,7 @@
 -callback mutate(Genome :: genotype()) -> genotype().
 %% true if the phenotype A has "higher performance" than B.
 -callback compare(A :: phenotype(), B :: phenotype()) -> boolean().
--callback to_behavior(Genome :: genotype()) -> list(float()).
+-callback to_behavior(Genome :: phenotype()) -> list(float()).
 %% The returned tuples {A, B} must satisfy A < B
 -callback behavior_space() -> list({float(), float()}).
 
@@ -40,32 +42,66 @@ init(Callbacks, InitialPopSize, NumIterations, Workers) ->
     {ok, WorkerPIDs} = start_workers(Callbacks, Workers),
     %% TODO rewrite this to use a user specified initialization size.
     seed_map(Callbacks, InitialPopSize, WorkerPIDs),
+    %mdarray:new(
+    %  lists:duplicate(length(Callbacks:behavior_space()), 512),
     master(Callbacks, 
-	   mdarray:new(
-	     lists:duplicate(length(Callbacks:behavior_space()), 512),
-	     array:new()), %% known keys.
+	   new_map(Callbacks), %% TODO: add options for hierarchical operation.
+	   array:new(), %% known keys.
 	   WorkerPIDs, length(WorkerPIDs), NumIterations).
 
-master(Callbacks, MapName, _, Workers, Iterations, MaxIterations) 
+new_map(Callbacks) ->
+    Dimensions = length(Callbacks:behavior_space()),
+    Table = ets:new(?MODULE, [ordered_set, protected]),
+    ets:insert(Table, {dimensions, Dimensions}),
+    ets:insert(Table, {granularity, ?MAP_GRANULARITY}),
+    Table.
+
+master(Callbacks, Map, _, Workers, Iterations, MaxIterations) 
   when Iterations >= MaxIterations ->
-    wait_for_workers(Callbacks, MapName, Workers),
-    % save the final table
-    ets:tab2file(MapName, atom_to_list(MapName)++".mape"),
-    % TODO: visualize this...
+    wait_for_workers(Callbacks, Map, Workers),
+    % TODO: save the map to file
+    % TODO: visualize
     done;
-%% TODO - increase granularity every ? iterations.
-master(Callbacks, MapName, KnownCells, Workers, Iterations, MaxIterations) ->
+master(Callbacks, Map, KnownCells, Workers, Iterations, MaxIterations) ->
     receive
 	{Worker, {BehaviorDescription, Phenotype}} ->
+	    Grid = behavior_to_grid(Callbacks, BehaviorDescription),
 	    KnownCells1 = array:set(array:size(KnownCells), 
-				    BehaviorDescription, KnownCells),
-	    [{_, {Genome, _}}] = ets:lookup(MapName, select(KnownCells1)),
+				    Grid, KnownCells),
+	    add_to_map(Callbacks, Map, Grid, Phenotype),
+	    [{_, {Genome, _}}] = ets:lookup(Map, select(KnownCells1)),
 	    mutate_and_evaluate(Genome, Worker)
     end,
-    master(Callbacks, MapName, KnownCells1. Workers, Iterations+1, MaxIterations).
+    master(Callbacks, Map, KnownCells1, Workers, Iterations+1, MaxIterations).
+
+add_to_map(Callbacks, Map, Grid, Phenotype) ->
+    case ets:inset_new(Map, {Grid, Phenotype}) of
+	true  -> true;
+	false -> 
+	    % if the new phenotype is "better" than the existing phenotype
+	    % according to the compare callback, then replace the existing 
+	    % phenotype.
+	    [{_, ExistingPhenotype}] = ets:lookup(Map, Grid),
+	    case Callbacks:compare(ExistingPhenotype, Phenotype) of
+		true  -> true;
+		false -> ets:insert(Map, {Grid, Phenotype})
+	    end
+    end.
 
 select(KnownCells) ->
-    undefined.
+    Index = rand:uniform(array:size(KnownCells)),
+    array:get(Index, KnownCells).
+
+wait_for_workers(_, _, []) ->
+    ok;
+wait_for_workers(Callbacks, Map, [W|Workers]) ->
+    receive
+	{W, {Behavior, Phenotype}} ->
+	    Grid = behavior_to_grid(Callbacks, Behavior),
+	    add_to_map(Callbacks, Map, Grid, Phenotype),
+	    stop_worker(W),
+	    wait_for_workers(Callbacks, Map, Workers)
+    end.
 
 do_n_times(_, 0) ->
     done;
@@ -104,6 +140,8 @@ start_worker(Callbacks, Node) ->
     'TODO - start_worker/2 undefined'.
 start_worker(Callbacks) ->
     spawn_link(?MODULE, worker, [Callbacks, self()]).
+
+stop_worker(Worker) -> Worker ! stop.
 
 % trial and error spec... I'm not sure how these work yet...
 %-spec worker(Callbacks :: module(), Master :: pid()) -> ok.
