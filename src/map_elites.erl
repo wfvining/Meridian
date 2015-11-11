@@ -13,7 +13,7 @@
 %%%    The tuples {A, B} returned must satisfy A < B.
 -module(map_elites).
 
--export([start/4]).
+-export([start/5]).
 -export([worker/2]).
 
 -define(MAP_GRANULARITY, 512).
@@ -31,58 +31,64 @@
 %% The returned tuples {A, B} must satisfy A < B
 -callback behavior_space() -> list({float(), float()}).
 
-start(Callbacks, InitialPopSize, NumIterations, Workers) ->
+start(Callbacks, InitialPopSize, NumIterations, Workers, Options) ->
     %% options specify the number of worker proceses to spawn
     %% TODO: read options and do what they say.
     %apply(map_elites, init, [Callbacks, MapName|Args]).
-    process_flag(trap_exit, true),
-    init(Callbacks, InitialPopSize, NumIterations, Workers).
+    init(Callbacks, InitialPopSize, NumIterations, Workers, Options).
 
-init(Callbacks, InitialPopSize, NumIterations, Workers) ->
+init(Callbacks, InitialPopSize, NumIterations, Workers, Options) ->
+    process_flag(trap_exit, true),
     {ok, WorkerPIDs} = start_workers(Callbacks, Workers),
-    %% TODO rewrite this to use a user specified initialization size.
+    case lists:keyfind(name, 1, Options) of
+	{name, Name} -> MapName = Name;
+	false        -> MapName = "unnamed"
+    end,
     seed_map(Callbacks, InitialPopSize, WorkerPIDs),
-    %mdarray:new(
-    %  lists:duplicate(length(Callbacks:behavior_space()), 512),
     master(Callbacks, 
-	   new_map(Callbacks), %% TODO: add options for hierarchical operation.
+	   new_map(Callbacks, MapName),
 	   array:new(), %% known keys.
 	   WorkerPIDs, length(WorkerPIDs), NumIterations).
 
-new_map(Callbacks) ->
+new_map(Callbacks, MapName) ->
     Dimensions = length(Callbacks:behavior_space()),
     Table = ets:new(?MODULE, [ordered_set, protected]),
     ets:insert(Table, {dimensions, Dimensions}),
     ets:insert(Table, {granularity, ?MAP_GRANULARITY}),
+    ets:insert(Table, {name, MapName}),
     Table.
 
 master(Callbacks, Map, _, Workers, Iterations, MaxIterations) 
   when Iterations >= MaxIterations ->
     wait_for_workers(Callbacks, Map, Workers),
-    ets:tab2file(Map, "map_elites.mape").
+    ets:tab2file(Map, ets:lookup(name) ++ ".mape"),
     % TODO: visualize
     done;
 master(Callbacks, Map, KnownCells, Workers, Iterations, MaxIterations) ->
     receive
-	{Worker, {BehaviorDescription, Phenotype}} ->
-	    Grid = behavior_to_grid(Callbacks, BehaviorDescription),
+	{_Worker, {BehaviorDescription, Phenotype}} ->
+	    Grid = behavior_to_grid(Callbacks, BehaviorDescription,
+				    ets:lookup(Map, granularity)),
 	    KnownCells1 = array:set(array:size(KnownCells), 
 				    Grid, KnownCells),
-	    add_to_map(Callbacks, Map, Grid, Phenotype);
+	    add_to_map(Callbacks, Map, Grid, Phenotype),
+	    master(Callbacks, Map, KnownCells1, Workers,
+		   Iterations, MaxIterations);
 	{Worker, get_genome} ->
 	    [{_, {Genome, _}}] = ets:lookup(Map, select(KnownCells)),
-	    mutate_and_evaluate(Genome, Worker)
-    end,
-    master(Callbacks, Map, KnownCells1, Workers, Iterations+1, MaxIterations).
+	    mutate_and_evaluate(Genome, Worker),
+	    master(Callbacks, Map, KnownCells, Workers, 
+		   Iterations+1, MaxIterations)
+    end.
 
-behavior_to_grid(Callbacks, Behavior) ->
-    behavior_to_grid(lists:zip(Callbacks:behavior_space(), Behavior)).
+behavior_to_grid(Callbacks, Behavior, Granularity) ->
+    behavior_to_grid(lists:zip(Callbacks:behavior_space(), Behavior),
+		     Granularity).
 
-behavior_to_grid([]) -> [];
-behavior_to_grid([{{Min, Max}, B}|Behaviors]) -> 
-    Granularity = ets:lookup(granularity),
+behavior_to_grid([], _) -> [];
+behavior_to_grid([{{Min, Max}, B}|Behaviors], Granularity) -> 
     BinSize = (Max - Min) / Granularity,
-    [trunc(B / BinSize)|behavior_to_grid(Behaviors)]. %% ??
+    [trunc(B / BinSize)|behavior_to_grid(Behaviors, Granularity)]. %% ??
 
 add_to_map(Callbacks, Map, Grid, Phenotype) ->
     case ets:inset_new(Map, {Grid, Phenotype}) of
