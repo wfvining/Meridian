@@ -27,7 +27,7 @@
 -callback mutate(Genome :: genotype()) -> genotype().
 %% true if the phenotype A has "higher performance" than B.
 -callback compare(A :: phenotype(), B :: phenotype()) -> boolean().
--callback to_behavior(Genome :: phenotype()) -> list(float()).
+-callback to_behavior(phenotype()) -> list(float()).
 %% The returned tuples {A, B} must satisfy A < B
 -callback behavior_space() -> list({float(), float()}).
 
@@ -59,7 +59,7 @@ new_map(Callbacks) ->
 master(Callbacks, Map, _, Workers, Iterations, MaxIterations) 
   when Iterations >= MaxIterations ->
     wait_for_workers(Callbacks, Map, Workers),
-    % TODO: save the map to file
+    ets:tab2file(Map, "map_elites.mape").
     % TODO: visualize
     done;
 master(Callbacks, Map, KnownCells, Workers, Iterations, MaxIterations) ->
@@ -73,6 +73,15 @@ master(Callbacks, Map, KnownCells, Workers, Iterations, MaxIterations) ->
 	    mutate_and_evaluate(Genome, Worker)
     end,
     master(Callbacks, Map, KnownCells1, Workers, Iterations+1, MaxIterations).
+
+behavior_to_grid(Callbacks, Behavior) ->
+    behavior_to_grid(lists:zip(Callbacks:behavior_space(), Behavior)).
+
+behavior_to_grid([]) -> [];
+behavior_to_grid([{{Min, Max}, B}|Behaviors]) -> 
+    Granularity = ets:lookup(granularity),
+    BinSize = (Max - Min) / Granularity,
+    [trunc(B / BinSize)|behavior_to_grid(Behaviors)]. %% ??
 
 add_to_map(Callbacks, Map, Grid, Phenotype) ->
     case ets:inset_new(Map, {Grid, Phenotype}) of
