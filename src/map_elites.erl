@@ -68,8 +68,9 @@ master(Callbacks, Map, KnownCells, Workers, Iterations, MaxIterations) ->
 	    Grid = behavior_to_grid(Callbacks, BehaviorDescription),
 	    KnownCells1 = array:set(array:size(KnownCells), 
 				    Grid, KnownCells),
-	    add_to_map(Callbacks, Map, Grid, Phenotype),
-	    [{_, {Genome, _}}] = ets:lookup(Map, select(KnownCells1)),
+	    add_to_map(Callbacks, Map, Grid, Phenotype);
+	{Worker, get_genome} ->
+	    [{_, {Genome, _}}] = ets:lookup(Map, select(KnownCells)),
 	    mutate_and_evaluate(Genome, Worker)
     end,
     master(Callbacks, Map, KnownCells1, Workers, Iterations+1, MaxIterations).
@@ -160,6 +161,7 @@ worker(Callbacks, Master) ->
 	    NewGenome = Callbacks:mutate(Genome),
 	    {ok, Phenotype} = Callbacks:evaluate(NewGenome),
 	    report_phenotype(Callbacks, Master, Phenotype),
+	    get_genome(Master),
 	    worker(Callbacks, Master);
 	{evaluate, Genome} ->
 	    {ok, Phenotype} = Callbacks:evaluate(Genome),
@@ -167,6 +169,9 @@ worker(Callbacks, Master) ->
 	    worker(Callbacks, Master);
 	stop -> ok
     end.
-    
+
+get_genome(Master) ->
+    Master ! {self(), get_genome}.
+
 report_phenotype(Callbacks, Master, Phenotype) ->
     Master ! {self(), {Callbacks:to_behavior(Phenotype), Phenotype}}.
