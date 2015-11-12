@@ -185,6 +185,7 @@ worker(Callbacks, Master) ->
 	    report_phenotype(Callbacks, Master, Phenotype),
             worker(Callbacks, Master);
 	stop -> ok
+%%% XXX: This is a hackey not well thought out 'fix' - do better
     after 100 ->
             get_genome(Master),
             worker(Callbacks, Master)

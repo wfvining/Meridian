@@ -25,9 +25,9 @@ init() ->
 
 evaluate([X, Y]) ->
     {ok, {[X, Y],
-          math:pow(X, 2) + 
-              math:pow(Y,2) * 
-              math:sin(math:pow(Y,3)) - math:cos(math:pow(X,3))}}.
+          #phenotype{objective=math:pow(X, 2) + 
+                         math:pow(Y,2) * 
+                         math:sin(math:pow(Y,3)) - math:cos(math:pow(X,3))}}}.
 
 mutate(Genome) ->
     continuous:gaussian_mutate(0.5, Genome, lists:duplicate(2, {-1,1}), 0.75).
