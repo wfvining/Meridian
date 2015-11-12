@@ -27,6 +27,7 @@
 -callback mutate(Genome :: genotype()) -> genotype().
 %% true if the phenotype A has "higher performance" than B.
 -callback compare(A :: phenotype(), B :: phenotype()) -> boolean().
+-callback objective(phenotype()) -> float().
 -callback to_behavior(phenotype()) -> list(float()).
 %% The returned tuples {A, B} must satisfy A < B
 -callback behavior_space() -> list({float(), float()}).
@@ -58,17 +59,22 @@ new_map(Callbacks, MapName) ->
     ets:insert(Table, {name, MapName}),
     Table.
 
+get_map_granularity(Map) ->
+    [{granularity, G}] = ets:lookup(Map, granularity),
+    G.
+
 master(Callbacks, Map, _, Workers, Iterations, MaxIterations) 
   when Iterations >= MaxIterations ->
     wait_for_workers(Callbacks, Map, Workers),
-    ets:tab2file(Map, ets:lookup(name) ++ ".mape"),
+    [{name, Name}] = ets:lookup(Map, name),
+    ets:tab2file(Map, Name ++ ".mape"),
     % TODO: visualize
-    done;
+    visualization:new(Callbacks, Map);
 master(Callbacks, Map, KnownCells, Workers, Iterations, MaxIterations) ->
     receive
 	{_Worker, {BehaviorDescription, Phenotype}} ->
 	    Grid = behavior_to_grid(Callbacks, BehaviorDescription,
-				    ets:lookup(Map, granularity)),
+				    get_map_granularity(Map)),
 	    KnownCells1 = array:set(array:size(KnownCells), 
 				    Grid, KnownCells),
 	    add_to_map(Callbacks, Map, Grid, Phenotype),
@@ -91,7 +97,7 @@ behavior_to_grid([{{Min, Max}, B}|Behaviors], Granularity) ->
     [trunc(B / BinSize)|behavior_to_grid(Behaviors, Granularity)]. %% ??
 
 add_to_map(Callbacks, Map, Grid, Phenotype) ->
-    case ets:inset_new(Map, {Grid, Phenotype}) of
+    case ets:insert_new(Map, {Grid, Phenotype}) of
 	true  -> true;
 	false -> 
 	    % if the new phenotype is "better" than the existing phenotype
@@ -113,7 +119,8 @@ wait_for_workers(_, _, []) ->
 wait_for_workers(Callbacks, Map, [W|Workers]) ->
     receive
 	{W, {Behavior, Phenotype}} ->
-	    Grid = behavior_to_grid(Callbacks, Behavior),
+	    Grid = behavior_to_grid(Callbacks, Behavior,
+				    get_map_granularity(Map)),
 	    add_to_map(Callbacks, Map, Grid, Phenotype),
 	    stop_worker(W),
 	    wait_for_workers(Callbacks, Map, Workers)
@@ -140,7 +147,11 @@ seed_map(Callbacks, NumSeeds, Workers) ->
 		  end, Workers),
     lists:foreach(fun(Worker) ->
 			  evaluate(Callbacks:init(), Worker)
-		  end, lists:take(ExtraGenomes, Workers)).
+		  end, take(ExtraGenomes, Workers)).
+
+take(N, List) ->
+    {FirstN, _} = lists:split(N, List),
+    FirstN.
 
 %%% ------ Worker functions ------
 evaluate(Genome, Worker) -> Worker ! {evaluate, Genome}.
@@ -153,7 +164,7 @@ start_workers(Callbacks, Workers) when is_integer(Workers) ->
 
 % start the worker processes
 start_worker(Callbacks, Node) ->
-    'TODO - start_worker/2 undefined'.
+    error('TODO - start_worker/2 not implemented').
 start_worker(Callbacks) ->
     spawn_link(?MODULE, worker, [Callbacks, self()]).
 

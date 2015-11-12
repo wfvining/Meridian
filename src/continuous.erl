@@ -2,16 +2,18 @@
 -module(continuous).
 -export([gaussian_mutate/2, gaussian_mutate/3, gaussian_mutate/4]).
 -export([random_genome/1]).
+-export([with_probability/3]).
 
 -type continuous_genome() :: list(float()).
--type bounds()            :: list({number(), number()}).
+-type range()             :: {number(), number()}.
+-type bounds()            :: list(range()).
 
 -spec gaussian_mutate(float()) -> float().
 gaussian_mutate(G) ->
     Mutation = rand:normal(),
     G + Mutation.
 
--spec clipped_gaussian_mutate(float(), bounds()) -> float().
+-spec clipped_gaussian_mutate(float(), range()) -> float().
 clipped_gaussian_mutate(G, {Min, Max}) ->
     Mutation = gaussian_mutate(G),
     if Mutation < Min -> Min;
@@ -19,11 +21,11 @@ clipped_gaussian_mutate(G, {Min, Max}) ->
        (Mutation >= Min) and (Mutation =< Max) -> Mutation
     end.    
 
--spec with_probability(float(), fun(), fun()) -> float().
-with_probability(P, Satisfied, NotSatisfied) ->
+-spec with_probability(float(), float(), fun()) -> float().
+with_probability(P, G, Satisfied) ->
     R = rand:uniform(),
-    if R < P  -> Satisfied();
-       R >= P -> NotSatisfied()
+    if R < P  -> Satisfied(G);
+       R >= P -> G
     end.
 
 %% Mutate using a normal distribution with mean 0 and standard deviation 1
@@ -37,7 +39,7 @@ gaussian_mutate(Probability, [G|Genome]) ->
             [G|gaussian_mutate(Probability, Genome)]
     end.
 
--spec  gaussian_mutate(float(), continuous_genome(), list(bounds()) | float())
+-spec  gaussian_mutate(float(), continuous_genome(), bounds() | float())
                       -> continuous_genome().
 gaussian_mutate(_, [], _) -> [];
 gaussian_mutate(Probability, [G|Genome], [Range|Bounds]) ->
@@ -57,7 +59,7 @@ gaussian_mutate(Probability, [G|Genome], StdDeviation) ->
             [G|gaussian_mutate(Probability, Genome, StdDeviation)]
     end.
 
--spec gaussian_mutate(float(), continuous_genome(), list(bounds()), float())
+-spec gaussian_mutate(float(), continuous_genome(), bounds(), float())
                      -> continuous_genome().
 gaussian_mutate(_, [], _, _) -> [];
 gaussian_mutate(Probability, [G|Genome], 
