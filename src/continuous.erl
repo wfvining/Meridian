@@ -39,6 +39,14 @@ gaussian_mutate(Probability, [G|Genome]) ->
             [G|gaussian_mutate(Probability, Genome)]
     end.
 
+%%% mutate using a normal distribution.  if the third argument is a
+%%% list of bounds() then the mutated genes are clipped to stay within
+%%% the corresponding bounds. The list should specify one pair of
+%%% bounds for each 'gene.' bounds should be in the sameorder as the
+%%% genes.
+%%%
+%%% If the third argument is a float() then it is used as the standard
+%%% deviation for the mutation.
 -spec  gaussian_mutate(float(), continuous_genome(), bounds() | float())
                       -> continuous_genome().
 gaussian_mutate(_, [], _) -> [];
@@ -59,6 +67,9 @@ gaussian_mutate(Probability, [G|Genome], StdDeviation) ->
             [G|gaussian_mutate(Probability, Genome, StdDeviation)]
     end.
 
+%%% Mutate a genome by adding a random value X ~ N(0, StdDev).  All
+%%% mutations are clipped to keep the resulting genes in the ranges
+%%% specified.
 -spec gaussian_mutate(float(), continuous_genome(), bounds(), float())
                      -> continuous_genome().
 gaussian_mutate(_, [], _, _) -> [];
@@ -75,6 +86,15 @@ gaussian_mutate(Probability, [G|Genome],
             [G|gaussian_mutate(Probability, Genome, Bounds, StdDeviation)]
     end.
 
+%%% Returns a random genome 
+%%%
+%%% If the argument is an integer N then a genome of length N with
+%%% unbounded genes (ie. could be arbitrarily large or small).
+%%% If the argument is a list of bounds then values are uniformly 
+%%% distributed between the bounds for each gene.
+%%% XXX: this produces only positive valued genes without bounds.
+%%%      if the lower bound is negative then it is possible to have
+%%%      negative bounds.
 -spec random_genome( integer() | list(bounds()) )
                    -> continuous_genome().
 random_genome(0)  -> [];
