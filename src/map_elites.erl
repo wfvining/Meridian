@@ -183,8 +183,11 @@ worker(Callbacks, Master) ->
 	{evaluate, Genome} ->
 	    {ok, Phenotype} = Callbacks:evaluate(Genome),
 	    report_phenotype(Callbacks, Master, Phenotype),
-	    worker(Callbacks, Master);
+            worker(Callbacks, Master);
 	stop -> ok
+    after 100 ->
+            get_genome(Master),
+            worker(Callbacks, Master)
     end.
 
 get_genome(Master) ->
