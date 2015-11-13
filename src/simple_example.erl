@@ -21,7 +21,7 @@
 -record(phenotype, {objective, behavior}).
 
 init() ->
-    continuous:random_genome(lists:duplicate(2, {-1, 1})).
+    continuous:random_genome(lists:duplicate(2, {-2, 2})).
 
 evaluate([X, Y]) ->
     {ok, {[X, Y],
@@ -30,7 +30,7 @@ evaluate([X, Y]) ->
                          math:sin(math:pow(Y,3)) - math:cos(math:pow(X,3))}}}.
 
 mutate(Genome) ->
-    continuous:gaussian_mutate(0.5, Genome, lists:duplicate(2, {-1,1}), 0.75).
+    continuous:gaussian_mutate(0.5, Genome, lists:duplicate(2, {-2,2}), 1).
 
 compare({_, #phenotype{objective=ObjA}}, {_, #phenotype{objective=ObjB}}) ->
     ObjA > ObjB.
@@ -38,12 +38,15 @@ compare({_, #phenotype{objective=ObjA}}, {_, #phenotype{objective=ObjB}}) ->
 objective({_, #phenotype{objective=Obj}}) ->
     Obj.
 
-to_behavior({Genome, _}) ->
-    Genome.
+to_behavior({[X, Y], _}) ->
+    [X+2, Y+2]. %% Gross hack because map_elites can't handle negative behavior
+                %% spaces yet.
 
 behavior_space() ->
-    lists:duplicate(2, {-1,1}).
+    lists:duplicate(2, {0,4}).
 
 start(InitialPop, NumIterations) ->
+    %% Note, increasing th number of workers does not help beyond
+    %% a certain point because the time for message passing begins to dominate.
     map_elites:start(?MODULE, InitialPop, NumIterations, 
-                     1, [{name, atom_to_list(?MODULE)}]).
+                     2000, [{name, atom_to_list(?MODULE)}]).

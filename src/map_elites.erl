@@ -75,8 +75,12 @@ master(Callbacks, Map, KnownCells, Workers, Iterations, MaxIterations) ->
 	{_Worker, {BehaviorDescription, Phenotype}} ->
 	    Grid = behavior_to_grid(Callbacks, BehaviorDescription,
 				    get_map_granularity(Map)),
-	    KnownCells1 = array:set(array:size(KnownCells), 
-				    Grid, KnownCells),
+	    case ets:lookup(Map, Grid) of
+		[] ->
+		    KnownCells1 = array:set(array:size(KnownCells), 
+					    Grid, KnownCells);
+		_ -> KnownCells1 = KnownCells
+	    end,
 	    add_to_map(Callbacks, Map, Grid, Phenotype),
 	    master(Callbacks, Map, KnownCells1, Workers,
 		   Iterations, MaxIterations);
