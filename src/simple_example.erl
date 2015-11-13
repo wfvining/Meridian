@@ -46,4 +46,4 @@ behavior_space() ->
 
 start(InitialPop, NumIterations) ->
     map_elites:start(?MODULE, InitialPop, NumIterations, 
-                     8, [{name, atom_to_list(?MODULE)}]).
+                     1, [{name, atom_to_list(?MODULE)}]).

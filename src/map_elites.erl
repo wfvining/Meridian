@@ -69,7 +69,7 @@ master(Callbacks, Map, _, Workers, Iterations, MaxIterations)
     [{name, Name}] = ets:lookup(Map, name),
     ets:tab2file(Map, Name ++ ".mape"),
     % TODO: visualize
-    visualization:new(Callbacks, Map);
+    visualization:static(Callbacks, Map);
 master(Callbacks, Map, KnownCells, Workers, Iterations, MaxIterations) ->
     receive
 	{_Worker, {BehaviorDescription, Phenotype}} ->
@@ -111,7 +111,7 @@ add_to_map(Callbacks, Map, Grid, Phenotype) ->
     end.
 
 select(KnownCells) ->
-    Index = rand:uniform(array:size(KnownCells)),
+    Index = rand:uniform(array:size(KnownCells)) - 1,
     array:get(Index, KnownCells).
 
 wait_for_workers(_, _, []) ->
@@ -183,12 +183,12 @@ worker(Callbacks, Master) ->
 	{evaluate, Genome} ->
 	    {ok, Phenotype} = Callbacks:evaluate(Genome),
 	    report_phenotype(Callbacks, Master, Phenotype),
+	    %% XXX: get_genome should not be used here. 
+	    %%      this will lead to a situation where each worker has
+	    %%      a backlog of work.
+	    get_genome(Master),
             worker(Callbacks, Master);
 	stop -> ok
-%%% XXX: This is a hackey not well thought out 'fix' - do better
-    after 100 ->
-            get_genome(Master),
-            worker(Callbacks, Master)
     end.
 
 get_genome(Master) ->
