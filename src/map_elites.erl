@@ -28,8 +28,10 @@
 %% true if the phenotype A has "higher performance" than B.
 -callback compare(A :: phenotype(), B :: phenotype()) -> boolean().
 -callback objective(phenotype()) -> float().
+%% behavior descriptors must be non-negative.
 -callback to_behavior(phenotype()) -> list(float()).
-%% The returned tuples {A, B} must satisfy A < B
+%% The returned tuples {A, B} must satisfy A < B furthermore the space
+%% must be non-negative.
 -callback behavior_space() -> list({float(), float()}).
 
 start(Callbacks, InitialPopSize, NumIterations, Workers, Options) ->
