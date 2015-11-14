@@ -79,20 +79,28 @@ the `map_elites` behavior.
 **Concurrency**
 [ ] Bug where a genome is requested before any are added to the map
     (occurs roughly 50% of runs)
+    
 [ ] Workers update the map concurrently
+
+[ ] Distribute workers across multiple nodes.
 
 **Utilities**
 [ ] Binary genomes
-[ ] Crossover and selection
-    select N cells at random, 
+
+[ ] Crossover and selection (? select N cells at random, chose the
+"fittest one" and select the fittest neighbor -- out of eight
+neighboring cells to use for xover).
 
 **Visualization**
 [x] Viz of the resulting matrix
+
 [ ] Faster viz
+
 [ ] Visualize progress as the algorithm runs
 
 **Results**
 [ ] Reporting format for the final genomes
+
 [ ] Save lineages
 
 
