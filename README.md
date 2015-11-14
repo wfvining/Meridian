@@ -77,6 +77,7 @@ the `map_elites` behavior.
 [ ] clean up code in the map_elites module. Especially worker and Master fns.
 
 **Concurrency**
+
 [ ] Bug where a genome is requested before any are added to the map
     (occurs roughly 50% of runs)
     
@@ -85,6 +86,7 @@ the `map_elites` behavior.
 [ ] Distribute workers across multiple nodes.
 
 **Utilities**
+
 [ ] Binary genomes
 
 [ ] Crossover and selection (? select N cells at random, chose the
@@ -92,6 +94,7 @@ the `map_elites` behavior.
 neighboring cells to use for xover).
 
 **Visualization**
+
 [x] Viz of the resulting matrix
 
 [ ] Faster viz
@@ -99,6 +102,7 @@ neighboring cells to use for xover).
 [ ] Visualize progress as the algorithm runs
 
 **Results**
+
 [ ] Reporting format for the final genomes
 
 [ ] Save lineages
