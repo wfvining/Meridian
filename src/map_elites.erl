@@ -170,7 +170,7 @@ start_workers(Callbacks, Workers) when is_integer(Workers) ->
 
 % start the worker processes
 start_worker(Callbacks, Node) ->
-    error('TODO - start_worker/2 not implemented').
+    spawn_link(Node, ?MODULE, worker, [Callbacks, self()]).
 start_worker(Callbacks) ->
     spawn_link(?MODULE, worker, [Callbacks, self()]).
 
