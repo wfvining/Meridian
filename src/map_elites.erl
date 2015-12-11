@@ -16,7 +16,7 @@
 -export([start/5]).
 -export([worker/2]).
 
--define(MAP_GRANULARITY, 512).
+-define(MAP_GRANULARITY, 256).
 
 -type genotype()  :: term().
 -type phenotype() :: {genotype(), term()}.
@@ -41,7 +41,6 @@ start(Callbacks, InitialPopSize, NumIterations, Workers, Options) ->
     init(Callbacks, InitialPopSize, NumIterations, Workers, Options).
 
 init(Callbacks, InitialPopSize, NumIterations, Workers, Options) ->
-    process_flag(trap_exit, true),
     {ok, WorkerPIDs} = start_workers(Callbacks, Workers),
     case lists:keyfind(name, 1, Options) of
 	{name, Name} -> MapName = Name;
