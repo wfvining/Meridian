@@ -14,7 +14,7 @@
 -module(map_elites).
 -include("map_elites.hrl").
 
--export([start/5]).
+-export([start/4]).
 -export([init_worker/3]).
 
 %% this should accept a seed
@@ -27,17 +27,17 @@
 -callback to_behavior(phenotype()) -> list(float()).
 -callback behavior_space() -> list({float(), float()}).
 
-start(Callbacks, InitialPopSize, NumIterations, Workers, Options) ->
+start(Callbacks, InitialPopSize, Workers, Options) ->
     %% options specify the number of worker proceses to spawn
     %% TODO: read options and do what they say.
     %apply(map_elites, init, [Callbacks, MapName|Args]).
-    init(Callbacks, InitialPopSize, NumIterations, Workers, Options).
+    init(Callbacks, InitialPopSize, Workers, Options).
 
 %% functions for options
 get_option(OptionName, Options, Default) ->
     case lists:keyfind(OptionName, 1, Options) of
-	{name, Name} -> Name;
-	false        -> Default
+	{OptionName, Option} -> Option;
+	false                -> Default
     end.
 
 %%% Functions to get specific options and return the default if the
@@ -79,23 +79,22 @@ new_map(MapName, Granularity) ->
 
 master(Callbacks, Map=#mape{map=Name}, Workers, Iterations, MaxIterations) 
   when Iterations >= MaxIterations ->
+    io:format("MASTER: stopping workers~n"),
     stop_workers(Workers),
-    wait_for_workers(Workers),
     %% Save the map.
-    ets:tab2file(Map, atom_to_list(Name) ++ ".mape"),
+    ets:tab2file(Name, atom_to_list(Name) ++ ".mape"),
     visualization:static(Callbacks, Map);
 master(Callbacks, Map, Workers, Iterations, MaxIterations) ->
     receive
-	{_Worker, iteration, _Phenotype} ->
+	{iteration, _Worker, _Phenotype} ->
 	    %% TODO: log the phenotype and track the best N phenotypes.
 	    master(Callbacks, Map, Workers, Iterations+1, MaxIterations)
     end.
 
-stop_workers([W]) ->
-    stop_worker(W);
-stop_workers([W|Workers]) ->
-    stop_worker(W),
-    stop_workers(Workers).
+%% Stop all workers and wait for them to finish.
+stop_workers(Workers) ->
+    lists:foreach(fun(W) -> stop_worker(W) end, Workers),
+    wait_for_workers(Workers).
 
 %% Wait for all worker processes to terminate, ensuring that they have
 %% reported the results of their final evaluation.
@@ -104,6 +103,7 @@ wait_for_workers([]) ->
 wait_for_workers([W|Workers]) ->
     receive
 	{W, done} ->
+	    io:format("Worker ~p stopped. Remaining workers: ~p~n", [W, Workers]),
 	    wait_for_workers(Workers)
     end.
 
@@ -170,7 +170,7 @@ insert_if_better(Callbacks, Map, Grid, Phenotype) ->
 	    end
     end.
 
-add_to_map(Callbacks, Phenotype, #mape{map=Map, granularity=Granularity}) ->
+add_to_map(Callbacks, #mape{map=Map, granularity=Granularity}, Phenotype) ->
     Behavior = Callbacks:to_behavior(Phenotype),
     Grid = behavior_to_grid(Callbacks, Behavior, Granularity),
     insert_if_better(Callbacks, Map, Grid, Phenotype).
@@ -197,20 +197,26 @@ init_worker(Callbacks, Master, Map, N) ->
 
 get_random_genome(#mape{map=Map}) ->
     MapSize = ets:info(Map, size),
-    R = rand:uniform(MapSize),
-    %% The method used here is quadratic in the granularity of the map
-    [{_, {Genome, _}}] = getnth(R, Map, '$end_of_table'),
+    %% uniform(N) returns a value in 1 to N, need 0 to N-1.
+    R = rand:uniform(MapSize) - 1,
+    %% The method used here is quadratic in the number of entries in the table
+    %% (worst case this will be the granularity of the map.
+    {Genome, _} = getnth(R, Map, ets:first(Map)),
     Genome.
 
 getnth(0, Map, Key) ->
-    ets:lookup(Map, Key);
+    [{Key, Phenotype}] = ets:lookup(Map, Key),
+    Phenotype;
 getnth(N, Map, Key) ->
     getnth(N-1, Map, ets:next(Map, Key)).
+
+finish(Master) ->
+    Master ! {self(), done}.
 
 %% The worker process.
 worker(Callbacks, Master, Map) ->
     receive
-	{Master, stop} -> Master ! done
+	{Master, stop} -> finish(Master)
     after 0 ->
 	    Genome = get_random_genome(Map),
 	    NewGenome = Callbacks:mutate(Genome),

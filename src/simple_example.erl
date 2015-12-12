@@ -48,5 +48,6 @@ behavior_space() ->
 start(InitialPop, NumIterations) ->
     %% Note, increasing th number of workers does not help beyond
     %% a certain point because the time for message passing begins to dominate.
-    map_elites:start(?MODULE, InitialPop, NumIterations, 
-                     2000, [{name, atom_to_list(?MODULE)}]).
+    map_elites:start(?MODULE, InitialPop, 10, 
+                     [{name, ?MODULE}, 
+		      {iterations, NumIterations}]).
