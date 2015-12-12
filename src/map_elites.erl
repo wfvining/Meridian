@@ -57,6 +57,8 @@ init(Callbacks, InitialPopSize, Workers, Options) ->
     NumIterations = get_num_iterations(Options),
     Map = new_map(MapName, MapGranularity),
     {ok, WorkerPIDs} = start_workers(Callbacks, Workers, Map),
+    io:format("INFO: started ~p workers~n", [length(WorkerPIDs)]),
+    Workers = length(WorkerPIDs),
     seed_map(InitialPopSize, WorkerPIDs),
     master(Callbacks, Map, WorkerPIDs, 0, NumIterations).
 
@@ -79,7 +81,7 @@ new_map(MapName, Granularity) ->
 
 master(Callbacks, Map=#mape{map=Name}, Workers, Iterations, MaxIterations) 
   when Iterations >= MaxIterations ->
-    io:format("MASTER: stopping workers~n"),
+    io:format("INFO: stopping workers~n"),
     stop_workers(Workers),
     %% Save the map.
     ets:tab2file(Name, atom_to_list(Name) ++ ".mape"),
@@ -103,7 +105,8 @@ wait_for_workers([]) ->
 wait_for_workers([W|Workers]) ->
     receive
 	{W, done} ->
-	    io:format("Worker ~p stopped. Remaining workers: ~p~n", [W, Workers]),
+	    io:format("INFO: Worker ~p stopped. Remaining workers: ~p~n", 
+		      [W, Workers]),
 	    wait_for_workers(Workers)
     end.
 
@@ -137,15 +140,12 @@ seed_map(NumSeeds, Workers) ->
 		  end, lists:zip(Seeds, Workers)).
     
 %%% ------ Worker functions ------
-initialize_worker(Worker, Seed) ->
-    Worker ! {self(), initialize, Seed}.
-
 start_workers(Callbacks, Workers, Map) when is_list(Workers) ->
     error("Distribution is not supported at this time."),
     {ok, [start_worker(Callbacks, Node, Map) || Node <- Workers]};
 start_workers(Callbacks, Workers, Map) when is_integer(Workers) ->
     %% XXX: not particularly efficient
-    {ok, [start_worker(Callbacks, Map) || _ <- lists:duplicate(1, Workers)]}.
+    {ok, [start_worker(Callbacks, Map) || _ <- lists:duplicate(Workers, 1)]}.
 
 % start the worker processes
 start_worker(Callbacks, Node, Map) ->
@@ -154,6 +154,9 @@ start_worker(Callbacks, Map) ->
     spawn_link(?MODULE, init_worker, [Callbacks, self(), Map]).
 
 stop_worker(Worker) -> Worker ! {self(), stop}.
+
+initialize_worker(Worker, Seed) ->
+    Worker ! {self(), initialize, Seed}.
 
 %% add a phenotype to the map at the specified grid location _iff_ it
 %% is better than the phenotype already stored at that grid location.
