@@ -12,14 +12,10 @@
 %%%    (behavior_space/0, behavior_space/1(?))
 %%%    The tuples {A, B} returned must satisfy A < B.
 -module(map_elites).
+-include("map_elites.hrl").
 
 -export([start/5]).
--export([worker/2]).
-
--define(MAP_GRANULARITY, 256).
-
--type genotype()  :: term().
--type phenotype() :: {genotype(), term()}.
+-export([init_worker/3]).
 
 %% this should accept a seed
 -callback init() -> genotype().
@@ -28,10 +24,7 @@
 %% true if the phenotype A has "higher performance" than B.
 -callback compare(A :: phenotype(), B :: phenotype()) -> boolean().
 -callback objective(phenotype()) -> float().
-%% behavior descriptors must be non-negative.
 -callback to_behavior(phenotype()) -> list(float()).
-%% The returned tuples {A, B} must satisfy A < B furthermore the space
-%% must be non-negative.
 -callback behavior_space() -> list({float(), float()}).
 
 start(Callbacks, InitialPopSize, NumIterations, Workers, Options) ->
@@ -40,74 +33,136 @@ start(Callbacks, InitialPopSize, NumIterations, Workers, Options) ->
     %apply(map_elites, init, [Callbacks, MapName|Args]).
     init(Callbacks, InitialPopSize, NumIterations, Workers, Options).
 
-init(Callbacks, InitialPopSize, NumIterations, Workers, Options) ->
-    {ok, WorkerPIDs} = start_workers(Callbacks, Workers),
-    case lists:keyfind(name, 1, Options) of
-	{name, Name} -> MapName = Name;
-	false        -> MapName = "unnamed"
-    end,
-    seed_map(Callbacks, InitialPopSize, WorkerPIDs),
-    master(Callbacks, 
-	   new_map(Callbacks, MapName),
-	   array:new(), %% known keys.
-	   WorkerPIDs, length(WorkerPIDs), NumIterations).
+%% functions for options
+get_option(OptionName, Options, Default) ->
+    case lists:keyfind(OptionName, 1, Options) of
+	{name, Name} -> Name;
+	false        -> Default
+    end.
 
-new_map(Callbacks, MapName) ->
-    Dimensions = length(Callbacks:behavior_space()),
-    Table = ets:new(?MODULE, [ordered_set, protected]),
-    ets:insert(Table, {dimensions, Dimensions}),
-    ets:insert(Table, {granularity, ?MAP_GRANULARITY}),
-    ets:insert(Table, {name, MapName}),
-    Table.
+%%% Functions to get specific options and return the default if the
+%%% Option is not available
+get_name(Options) ->
+    get_option(name, Options, ?DEFAULT_MAP_NAME).
 
-get_map_granularity(Map) ->
-    [{granularity, G}] = ets:lookup(Map, granularity),
-    G.
+get_granularity(Options) ->
+    get_option(granularity, Options, ?DEFAULT_GRANULARITY).
 
-master(Callbacks, Map, _, Workers, Iterations, MaxIterations) 
+get_num_iterations(Options) ->
+    get_option(iterations, Options, ?DEFAULT_ITERATIONS).
+
+init(Callbacks, InitialPopSize, Workers, Options) ->
+    MapName = get_name(Options),
+    MapGranularity = get_granularity(Options),
+    NumIterations = get_num_iterations(Options),
+    Map = new_map(MapName, MapGranularity),
+    {ok, WorkerPIDs} = start_workers(Callbacks, Workers, Map),
+    seed_map(InitialPopSize, WorkerPIDs),
+    master(Callbacks, Map, WorkerPIDs, 0, NumIterations).
+
+new_map(MapName, Granularity) ->
+    % Reasoning behind the choice of 'set' as the table type:
+    %   Because elements will be selected randomly, one at a time,
+    %   there is no need for traversals to happen in-order, hence
+    %   the faster access time for sets (ref. LYSE) is desirable.
+    %
+    % There isn't really a good reason to make this a named table as
+    % long as the result of this call is passed to the worker processes
+    % 
+    % The table is made public so that the worker processes can write
+    % to it, preventing a bottleneck at the master.
+    % 
+    % TODO: It might be beneficial to enable 'read_concurrency' if the
+    % visualization is running in real time, and not just at the end.
+    #mape{map=ets:new(MapName, [set, public, named_table]),
+	  granularity=Granularity}.
+
+master(Callbacks, Map=#mape{map=Name}, Workers, Iterations, MaxIterations) 
   when Iterations >= MaxIterations ->
-    wait_for_workers(Callbacks, Map, Workers),
-    [{name, Name}] = ets:lookup(Map, name),
-    ets:tab2file(Map, Name ++ ".mape"),
-    % TODO: visualize
+    stop_workers(Workers),
+    wait_for_workers(Workers),
+    %% Save the map.
+    ets:tab2file(Map, atom_to_list(Name) ++ ".mape"),
     visualization:static(Callbacks, Map);
-master(Callbacks, Map, KnownCells, Workers, Iterations, MaxIterations) ->
+master(Callbacks, Map, Workers, Iterations, MaxIterations) ->
     receive
-	{_Worker, {BehaviorDescription, Phenotype}} ->
-	    Grid = behavior_to_grid(Callbacks, BehaviorDescription,
-				    get_map_granularity(Map)),
-	    case ets:lookup(Map, Grid) of
-		[] ->
-		    KnownCells1 = array:set(array:size(KnownCells), 
-					    Grid, KnownCells);
-		_ -> KnownCells1 = KnownCells
-	    end,
-	    add_to_map(Callbacks, Map, Grid, Phenotype),
-	    master(Callbacks, Map, KnownCells1, Workers,
-		   Iterations, MaxIterations);
-	{Worker, get_genome} ->
-	    [{_, {Genome, _}}] = ets:lookup(Map, select(KnownCells)),
-	    mutate_and_evaluate(Genome, Worker),
-	    master(Callbacks, Map, KnownCells, Workers, 
-		   Iterations+1, MaxIterations)
+	{_Worker, iteration, _Phenotype} ->
+	    %% TODO: log the phenotype and track the best N phenotypes.
+	    master(Callbacks, Map, Workers, Iterations+1, MaxIterations)
+    end.
+
+stop_workers([W]) ->
+    stop_worker(W);
+stop_workers([W|Workers]) ->
+    stop_worker(W),
+    stop_workers(Workers).
+
+%% Wait for all worker processes to terminate, ensuring that they have
+%% reported the results of their final evaluation.
+wait_for_workers([]) ->
+    ok;
+wait_for_workers([W|Workers]) ->
+    receive
+	{W, done} ->
+	    wait_for_workers(Workers)
     end.
 
 behavior_to_grid(Callbacks, Behavior, Granularity) ->
+    %% Get the range for each dimension of the behavior space and Zip
+    %% it with the corresponding dimension in the behavior
+    %% description.
     behavior_to_grid(lists:zip(Callbacks:behavior_space(), Behavior),
 		     Granularity).
-
 behavior_to_grid([], _) -> [];
 behavior_to_grid([{{Min, Max}, B}|Behaviors], Granularity) -> 
-    BinSize = (Max - Min) / Granularity,
-    [trunc(B / BinSize)|behavior_to_grid(Behaviors, Granularity)]. %% ??
+    BinSize = (Max - Min) / Granularity, 
+    [trunc((B - Min) / BinSize)|behavior_to_grid(Behaviors, Granularity)].
 
-add_to_map(Callbacks, Map, Grid, Phenotype) ->
+increment_firstn(0, L) -> L;
+increment_firstn(N, [H|Tail]) -> 
+    [H + 1 | increment_firstn(N-1, Tail)].
+
+%% evenly distribute new genomes to the workers.  workers should (and
+%% do) process messages one at a time meaning that the genomes will be
+%% held in the message queue until they are evaluated and returned to
+%% the master to be added to the MAP.
+seed_map(NumSeeds, Workers) ->
+    GenomesPerWorker = NumSeeds div length(Workers),
+    ExtraGenomes = NumSeeds rem length(Workers),
+    Seeds = increment_firstn(ExtraGenomes, 
+			     lists:duplicate(length(Workers),
+					     GenomesPerWorker)),
+    lists:foreach(fun({Seed, Worker}) ->
+			  initialize_worker(Worker, Seed)
+		  end, lists:zip(Seeds, Workers)).
+    
+%%% ------ Worker functions ------
+initialize_worker(Worker, Seed) ->
+    Worker ! {self(), initialize, Seed}.
+
+start_workers(Callbacks, Workers, Map) when is_list(Workers) ->
+    error("Distribution is not supported at this time."),
+    {ok, [start_worker(Callbacks, Node, Map) || Node <- Workers]};
+start_workers(Callbacks, Workers, Map) when is_integer(Workers) ->
+    %% XXX: not particularly efficient
+    {ok, [start_worker(Callbacks, Map) || _ <- lists:duplicate(1, Workers)]}.
+
+% start the worker processes
+start_worker(Callbacks, Node, Map) ->
+    spawn_link(Node, ?MODULE, init_worker, [Callbacks, self(), Map]).
+start_worker(Callbacks, Map) ->
+    spawn_link(?MODULE, init_worker, [Callbacks, self(), Map]).
+
+stop_worker(Worker) -> Worker ! {self(), stop}.
+
+%% add a phenotype to the map at the specified grid location _iff_ it
+%% is better than the phenotype already stored at that grid location.
+%% if no phenotype is already present then the provided phenotype is
+%% stored.
+insert_if_better(Callbacks, Map, Grid, Phenotype) ->
     case ets:insert_new(Map, {Grid, Phenotype}) of
 	true  -> true;
 	false -> 
-	    % if the new phenotype is "better" than the existing phenotype
-	    % according to the compare callback, then replace the existing 
-	    % phenotype.
 	    [{_, ExistingPhenotype}] = ets:lookup(Map, Grid),
 	    case Callbacks:compare(ExistingPhenotype, Phenotype) of
 		true  -> true;
@@ -115,89 +170,52 @@ add_to_map(Callbacks, Map, Grid, Phenotype) ->
 	    end
     end.
 
-select(KnownCells) ->
-    Index = rand:uniform(array:size(KnownCells)) - 1,
-    array:get(Index, KnownCells).
+add_to_map(Callbacks, Phenotype, #mape{map=Map, granularity=Granularity}) ->
+    Behavior = Callbacks:to_behavior(Phenotype),
+    Grid = behavior_to_grid(Callbacks, Behavior, Granularity),
+    insert_if_better(Callbacks, Map, Grid, Phenotype).
 
-wait_for_workers(_, _, []) ->
-    ok;
-wait_for_workers(Callbacks, Map, [W|Workers]) ->
+report_iteration(Master, Phenotype) ->
+    Master ! {iteration, self(), Phenotype}.
+
+%% init_worker waits to receive a message from the master indicating
+%% it should begin by generating and evaluating N random gemomes and
+%% adding them to the map.
+init_worker(Callbacks, Master, Map) ->
     receive
-	{W, {Behavior, Phenotype}} ->
-	    Grid = behavior_to_grid(Callbacks, Behavior,
-				    get_map_granularity(Map)),
-	    add_to_map(Callbacks, Map, Grid, Phenotype),
-	    stop_worker(W),
-	    wait_for_workers(Callbacks, Map, Workers)
+	{Master, initialize, N} ->
+	    init_worker(Callbacks, Master, Map, N)
     end.
+init_worker(Callbacks, Master, Map, 0) ->
+    worker(Callbacks, Master, Map);
+init_worker(Callbacks, Master, Map, N) ->
+    Genome = Callbacks:init(),
+    {ok, Phenotype} = Callbacks:evaluate(Genome),
+    add_to_map(Callbacks, Map, Phenotype),
+    report_iteration(Master, Phenotype),
+    init_worker(Callbacks, Master, Map, N-1).
 
-do_n_times(_, 0) ->
-    done;
-do_n_times(Fun, N) ->
-    Fun(),
-    do_n_times(Fun, N-1).
+get_random_genome(#mape{map=Map}) ->
+    MapSize = ets:info(Map, size),
+    R = rand:uniform(MapSize),
+    %% The method used here is quadratic in the granularity of the map
+    [{_, {Genome, _}}] = getnth(R, Map, '$end_of_table'),
+    Genome.
 
-%% evenly distribute new genomes to the workers.  workers should (and
-%% do) process messages one at a time meaning that the genomes will be
-%% held in the message queue until they are evaluated and returned to
-%% the master to be added to the MAP.
-seed_map(Callbacks, NumSeeds, Workers) ->
-    GenomesPerWorker = NumSeeds div length(Workers),
-    ExtraGenomes = NumSeeds rem length(Workers),
-    lists:foreach(fun(Worker) ->
-			  do_n_times(fun() -> 
-					     evaluate(Callbacks:init(),
-						      Worker) 
-				     end, GenomesPerWorker)
-		  end, Workers),
-    lists:foreach(fun(Worker) ->
-			  evaluate(Callbacks:init(), Worker)
-		  end, take(ExtraGenomes, Workers)).
+getnth(0, Map, Key) ->
+    ets:lookup(Map, Key);
+getnth(N, Map, Key) ->
+    getnth(N-1, Map, ets:next(Map, Key)).
 
-take(N, List) ->
-    {FirstN, _} = lists:split(N, List),
-    FirstN.
-
-%%% ------ Worker functions ------
-evaluate(Genome, Worker) -> Worker ! {evaluate, Genome}.
-mutate_and_evaluate(Genome, Worker) -> Worker ! {mutate_and_evaluate, Genome}.
-
-start_workers(Callbacks, Workers) when is_list(Workers) ->
-    {ok, [start_worker(Callbacks, Node) || Node <- Workers]};
-start_workers(Callbacks, Workers) when is_integer(Workers) ->
-    {ok, [start_worker(Callbacks) || _ <- lists:duplicate(1, Workers)]}.
-
-% start the worker processes
-start_worker(Callbacks, Node) ->
-    spawn_link(Node, ?MODULE, worker, [Callbacks, self()]).
-start_worker(Callbacks) ->
-    spawn_link(?MODULE, worker, [Callbacks, self()]).
-
-stop_worker(Worker) -> Worker ! stop.
-
-% trial and error spec... I'm not sure how these work yet...
-%-spec worker(Callbacks :: module(), Master :: pid()) -> ok.
-worker(Callbacks, Master) ->
+%% The worker process.
+worker(Callbacks, Master, Map) ->
     receive
-	{mutate_and_evaluate, Genome} ->
+	{Master, stop} -> Master ! done
+    after 0 ->
+	    Genome = get_random_genome(Map),
 	    NewGenome = Callbacks:mutate(Genome),
 	    {ok, Phenotype} = Callbacks:evaluate(NewGenome),
-	    report_phenotype(Callbacks, Master, Phenotype),
-	    get_genome(Master),
-	    worker(Callbacks, Master);
-	{evaluate, Genome} ->
-	    {ok, Phenotype} = Callbacks:evaluate(Genome),
-	    report_phenotype(Callbacks, Master, Phenotype),
-	    %% XXX: get_genome should not be used here. 
-	    %%      this will lead to a situation where each worker has
-	    %%      a backlog of work.
-	    get_genome(Master),
-            worker(Callbacks, Master);
-	stop -> ok
+	    add_to_map(Callbacks, Map, Phenotype),
+	    report_iteration(Master, Phenotype),
+	    worker(Callbacks, Master, Map)
     end.
-
-get_genome(Master) ->
-    Master ! {self(), get_genome}.
-
-report_phenotype(Callbacks, Master, Phenotype) ->
-    Master ! {self(), {Callbacks:to_behavior(Phenotype), Phenotype}}.
