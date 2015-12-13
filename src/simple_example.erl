@@ -30,7 +30,7 @@ evaluate([X, Y]) ->
                          math:sin(math:pow(Y,3)) - math:cos(math:pow(X,3))}}}.
 
 mutate(Genome) ->
-    continuous:gaussian_mutate(0.5, Genome, lists:duplicate(2, {-2,2}), 1).
+    continuous:gaussian_mutate(0.5, Genome, lists:duplicate(2, {-2,2}), 0.5).
 
 compare({_, #phenotype{objective=ObjA}}, {_, #phenotype{objective=ObjB}}) ->
     ObjA > ObjB.
@@ -49,4 +49,5 @@ start(InitialPop, NumIterations) ->
     %% a certain point because the time for message passing begins to dominate.
     map_elites:start(?MODULE, InitialPop, 10, 
                      [{name, ?MODULE}, 
-		      {iterations, NumIterations}]).
+		      {iterations, NumIterations},
+		      {granularity, 100}]).
