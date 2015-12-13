@@ -146,10 +146,10 @@ increment_firstn(N, [H|Tail]) ->
 %% held in the message queue until they are evaluated and returned to
 %% the master to be added to the MAP.
 seed_map(NumSeeds, Workers) when NumSeeds < length(Workers) ->
-    {SeedWorkers, OtherWorkers} = lists:split(NumSeeds, Workers),
+    {SeededWorkers, OtherWorkers} = lists:split(NumSeeds, Workers),
     lists:foreach(fun(W) ->
 			  initialize_worker(W, 1)
-		  end, SeedWorkers),
+		  end, SeededWorkers),
     receive
 	%% this ensures that there is at least one item in the map
 	%% when the rest of the workers (that don't have seeds) start.
@@ -232,13 +232,13 @@ init_worker(Callbacks, Master, Map, N) ->
 get_random_genome(#mape{map=Map}) ->
     MapSize = ets:info(Map, size),
     %% uniform(N) returns a value in 1 to N, need 0 to N-1.
-    R = rand:uniform(MapSize-1),
+    R = rand:uniform(MapSize)-1,
     %% The method used here is quadratic in the number of entries in the table
     %% (worst case this will be the granularity of the map.
     {Genome, _} = getnth(R, Map, ets:first(Map)),
     Genome.
 
-getnth(1, Map, Key) ->
+getnth(N, Map, Key) when N =< 1 ->
     [{Key, Phenotype}] = ets:lookup(Map, Key),
     Phenotype;
 getnth(N, Map, Key) ->
