@@ -15,11 +15,6 @@ is [http://arxiv.org/abs/1504.04909](here).
 1. I wanted to write something non-trivial in erlang
 2. MAP-Elites is cool
 3. MAP-Elites benefits from concurrency and parallelism
-   - I think concurrently, asynchronously, updating the map doesn't
-     change the algorithm; hence, Erlang. (That said my current version
-     doesn't concurrently update the map...)
-   - By implementing MAP-Elites in Erlang it might be easy to make the
-     algorithm parallel.
 
 ## How it works
 
