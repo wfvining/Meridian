@@ -145,6 +145,21 @@ increment_firstn(N, [H|Tail]) ->
 %% do) process messages one at a time meaning that the genomes will be
 %% held in the message queue until they are evaluated and returned to
 %% the master to be added to the MAP.
+seed_map(NumSeeds, Workers) when NumSeeds < length(Workers) ->
+    {SeedWorkers, OtherWorkers} = lists:split(NumSeeds, Workers),
+    lists:foreach(fun(W) ->
+			  initialize_worker(W, 1)
+		  end, SeedWorkers),
+    receive
+	%% this ensures that there is at least one item in the map
+	%% when the rest of the workers (that don't have seeds) start.
+	M={iteration, _, _} -> 
+	    % put the message back in the queue so it can be processed properly.
+	    self() ! M,
+	    lists:foreach(fun(W) ->
+				  initialize_worker(W, 0)
+			  end, OtherWorkers)
+    end;
 seed_map(NumSeeds, Workers) ->
     GenomesPerWorker = NumSeeds div length(Workers),
     ExtraGenomes = NumSeeds rem length(Workers),
@@ -217,18 +232,12 @@ init_worker(Callbacks, Master, Map, N) ->
 get_random_genome(#mape{map=Map}) ->
     MapSize = ets:info(Map, size),
     %% uniform(N) returns a value in 1 to N, need 0 to N-1.
-    R = rand:uniform(MapSize),
+    R = rand:uniform(MapSize-1),
     %% The method used here is quadratic in the number of entries in the table
     %% (worst case this will be the granularity of the map.
     {Genome, _} = getnth(R, Map, ets:first(Map)),
     Genome.
 
-getnth(_, Map, '$end_of_table') ->
-    %% We shouldn't overrun the end of the table, but apparently it is
-    %% still a possibility. This is highly irritating
-    io:format('WARN: Overran the end of the table (wish I knew why).~n'),
-    [{_, Phenotype}] = ets:last(Map),
-    Phenotype;
 getnth(1, Map, Key) ->
     [{Key, Phenotype}] = ets:lookup(Map, Key),
     Phenotype;
