@@ -1,5 +1,7 @@
 -module(visualization).
 
+-include("map_elites.hrl").
+
 -export([static/2]).
 
 %% Issue a plot command to GNUPlot
@@ -22,7 +24,8 @@ send_data(GNUPlot, Data) ->
 
 plot_map(GNUPlot, Data) ->
     command(GNUPlot, <<"plot '-' with image\n">>),
-    send_data(GNUPlot, Data).
+    send_data(GNUPlot, Data),
+    ok.
 
 %%% This is sort of like the "jet" palette found here:
 %%% https://github.com/Gnuplotting/gnuplot-palettes/blob/master/jet.pal
@@ -44,8 +47,9 @@ get_fitness_range(Callbacks, Map) ->
 		 (_, Acc) -> Acc %% Ignore extra data stored in the table
 	      end, {Init, Init}, Map).
 
-map_to_list(Callbacks, Map, UndefinedValue) ->
-    [{granularity, Granularity}] = ets:lookup(Map, granularity),
+map_to_list(Callbacks, 
+	    #mape{map=Map, granularity=Granularity},
+	    UndefinedValue) ->
     [[case ets:lookup(Map, [X, Y]) of
 	  [{[X, Y], Phenotype}] ->
 	      [X, Y, Callbacks:objective(Phenotype)];
@@ -59,11 +63,10 @@ num_to_list(Num) when is_integer(Num) ->
 num_to_list(Num) when is_float(Num)   ->
     io_lib:format("~.10f", [Num]).
 
-static(Callbacks, Map) ->
+static(Callbacks, M=#mape{map=Map, granularity=Granularity}) ->
     io:format("VIZ: building static viz~n"),
     GNUPlot = open_port({spawn, "gnuplot"}, []),
     {MinFitness, MaxFitness} = get_fitness_range(Callbacks, Map),
-    [{granularity, Granularity}] = ets:lookup(Map, granularity),
     G = integer_to_list(Granularity - 1),
     Min = num_to_list(MinFitness),
     Max = num_to_list(MaxFitness),
@@ -72,5 +75,5 @@ static(Callbacks, Map) ->
     command(GNUPlot, "set cbrange ["++Min++":"++Max++"]\n"),
     set_palette(jet, GNUPlot),
     io:format("VIZ: converting map to list~n"),
-    FullMap = map_to_list(Callbacks, Map, MaxFitness + 10),
+    FullMap = map_to_list(Callbacks, M, MaxFitness + 10),
     plot_map(GNUPlot, FullMap).

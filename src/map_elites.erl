@@ -106,7 +106,7 @@ wait_for_workers([W|Workers]) ->
     receive
 	{W, done} ->
 	    io:format("INFO: Worker ~p stopped. Remaining workers: ~p~n", 
-		      [W, Workers]),
+		       [W, Workers]),
 	    wait_for_workers(Workers)
     end.
 
@@ -118,8 +118,24 @@ behavior_to_grid(Callbacks, Behavior, Granularity) ->
 		     Granularity).
 behavior_to_grid([], _) -> [];
 behavior_to_grid([{{Min, Max}, B}|Behaviors], Granularity) -> 
-    BinSize = (Max - Min) / Granularity, 
-    [trunc((B - Min) / BinSize)|behavior_to_grid(Behaviors, Granularity)].
+    BinSize = (Max - Min) / Granularity,
+    [bin_number(B, BinSize, Min, Max)|behavior_to_grid(Behaviors, Granularity)].
+
+bin_number(X, BinSize, Min, Max) ->
+    NumBins = trunc((Max - Min) / BinSize),
+    BinRanges = [{Min + B * BinSize, Min + (B + 1) * BinSize}
+		 || B <- lists:seq(0, NumBins-1)],
+    argsat(fun({Lower, Upper}) ->
+		   (X >= Lower) and (X =< Upper)
+	   end, BinRanges).
+
+argsat(Pred, Ls) ->
+    argsat(Pred, Ls, 0).
+argsat(Pred, [H|Tail], N) ->
+    case Pred(H) of
+	true  -> N;
+	false -> argsat(Pred, Tail, N+1)
+    end.
 
 increment_firstn(0, L) -> L;
 increment_firstn(N, [H|Tail]) -> 
@@ -169,7 +185,7 @@ insert_if_better(Callbacks, Map, Grid, Phenotype) ->
 	    [{_, ExistingPhenotype}] = ets:lookup(Map, Grid),
 	    case Callbacks:compare(ExistingPhenotype, Phenotype) of
 		true  -> true;
-		false -> ets:insert(Map, {Grid, Phenotype})
+		false ->   ets:insert(Map, {Grid, Phenotype})
 	    end
     end.
 
@@ -201,13 +217,19 @@ init_worker(Callbacks, Master, Map, N) ->
 get_random_genome(#mape{map=Map}) ->
     MapSize = ets:info(Map, size),
     %% uniform(N) returns a value in 1 to N, need 0 to N-1.
-    R = rand:uniform(MapSize) - 1,
+    R = rand:uniform(MapSize),
     %% The method used here is quadratic in the number of entries in the table
     %% (worst case this will be the granularity of the map.
     {Genome, _} = getnth(R, Map, ets:first(Map)),
     Genome.
 
-getnth(0, Map, Key) ->
+getnth(_, Map, '$end_of_table') ->
+    %% We shouldn't overrun the end of the table, but apparently it is
+    %% still a possibility. This is highly irritating
+    io:format('WARN: Overran the end of the table (wish I knew why).~n'),
+    [{_, Phenotype}] = ets:last(Map),
+    Phenotype;
+getnth(1, Map, Key) ->
     [{Key, Phenotype}] = ets:lookup(Map, Key),
     Phenotype;
 getnth(N, Map, Key) ->

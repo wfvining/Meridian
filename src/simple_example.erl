@@ -39,11 +39,10 @@ objective({_, #phenotype{objective=Obj}}) ->
     Obj.
 
 to_behavior({[X, Y], _}) ->
-    [X+2, Y+2]. %% Gross hack because map_elites can't handle negative behavior
-                %% spaces yet.
+    [X, Y].
 
 behavior_space() ->
-    lists:duplicate(2, {0,4}).
+    lists:duplicate(2, {-2, 2}).
 
 start(InitialPop, NumIterations) ->
     %% Note, increasing th number of workers does not help beyond
