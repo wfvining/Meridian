@@ -2,7 +2,6 @@
 -module(continuous).
 -export([gaussian_mutate/2, gaussian_mutate/3, gaussian_mutate/4]).
 -export([random_genome/1]).
--export([with_probability/3]).
 
 -type continuous_genome() :: list(float()).
 -type range()             :: {number(), number()}.
@@ -20,13 +19,6 @@ clipped_gaussian_mutate(G, {Min, Max}) ->
        Mutation > Max -> Max;
        (Mutation >= Min) and (Mutation =< Max) -> Mutation
     end.    
-
--spec with_probability(float(), float(), fun()) -> float().
-with_probability(P, G, Satisfied) ->
-    R = rand:uniform(),
-    if R < P  -> Satisfied(G);
-       R >= P -> G
-    end.
 
 %% Mutate using a normal distribution with mean 0 and standard deviation 1
 -spec gaussian_mutate(float(), continuous_genome()) -> continuous_genome().
