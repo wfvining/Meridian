@@ -85,7 +85,8 @@ master(Callbacks, Map=#mape{map=Name}, Workers, Iterations, MaxIterations)
     stop_workers(Workers),
     %% Save the map.
     ets:tab2file(Name, atom_to_list(Name) ++ ".mape"),
-    visualization:static(Callbacks, Map);
+    visualization:static(Callbacks, Map),
+    ets:delete(Name);
 master(Callbacks, Map, Workers, Iterations, MaxIterations) ->
     receive
 	{iteration, _Worker, _Phenotype} ->
