@@ -18,31 +18,6 @@ is [http://arxiv.org/abs/1504.04909](here).
 
 ## How it works
 
-### Version 0
-
-A master node holds an ETS table that represents the map. Keys are
-tuples indexing a grid cell in the map. The master holds state
-representing the granularity of the map (ie. how many cells there
-are), which cells are currently filled, and the total number of
-iterations (ie. updates to the map).
-
-The master generates the initial set of genomes and distributes them
-to the workers to be evaluated concurrently. When a worker finishes
-evaluating its genome it reports back to the master with a record of
-the performance and phenotypical properties of the genome.The master
-updates the appropriate entry in the ETS table according to the
-map-elites algorithm.
-
-When the worker finishes evaluating a genome it requests a genome for
-mutation and evaluation from the Master. The worker goes off and
-evaluates the genome and the whole cycle repeats. When the termination
-condition is met (to begin the only condition is a particular number
-of iterations) the master waits for all workers to finish updating the
-map and terminates them as they do, reporting the final map.
-
-*This isn't actually how it works... need to rework the desctiption
-(and the code).*
-
 ### Version 1
 There is a master process which does no work except to track the total 
 number of iterations and terminate the workers when enough have been 
@@ -56,8 +31,7 @@ than are required, in fact it is likely that they will overrun by at least
 one iteration. At worst the number of extra iterations that are performed 
 _should_ be only the number of workers. 
 
-The interface for starting a `map_elites` behavior has been simplified and 
-the options that can be passed have been expanded. The interface is shown below.
+The interface for starting a `map_elites` behavior is shown below.
 
 ```erlang
 -spec start(Callbacks :: module(), 
