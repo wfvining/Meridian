@@ -48,7 +48,7 @@ gaussian_mutate(Probability, [G|Genome], [Range|Bounds]) ->
             [clipped_gaussian_mutate(G,Range)
              |gaussian_mutate(Probability, Genome, Bounds)];
        R >= Probability ->
-            [G|gaussian_mutate(Probability, Genome)]
+            [G|gaussian_mutate(Probability, Genome, Bounds)]
     end;
 gaussian_mutate(Probability, [G|Genome], StdDeviation) ->
     R = rand:uniform(),
