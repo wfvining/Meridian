@@ -8,7 +8,7 @@ and a library for building programs that use MAP-Elites.
 MAP-Elites is an algorithm for mapping the "performance" of a genome
 that describes the solution to a problem according to the phenotypic
 descriptors of the genome. This is a bad description - The draft paper
-is (http://arxiv.org/abs/1504.04909)[here].
+is here (http://arxiv.org/abs/1504.04909).
 
 ## Rationale
 
@@ -80,7 +80,7 @@ the `map_elites` behavior.
 ```
 
 #### Building
-To build use (http://github.com/rebar/rebar3)[rebar3].
+To build use rebar3 (http://github.com/rebar/rebar3).
 
 ```
 $ rebar3 compile
