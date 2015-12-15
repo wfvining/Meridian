@@ -8,7 +8,7 @@ and a library for building programs that use MAP-Elites.
 MAP-Elites is an algorithm for mapping the "performance" of a genome
 that describes the solution to a problem according to the phenotypic
 descriptors of the genome. This is a bad description - The draft paper
-is [http://arxiv.org/abs/1504.04909](here).
+is (http://arxiv.org/abs/1504.04909)[here].
 
 ## Rationale
 
@@ -77,6 +77,28 @@ the `map_elites` behavior.
 %% The returned tuples {A, B} must satisfy A < B furthermore the space
 %% must be non-negative.
 -callback behavior_space() -> list({float(), float()}).
+```
+
+#### Building
+To build use (http://github.com/rebar/rebar3)[rebar3].
+
+```
+$ rebar3 compile
+```
+
+This will make compile all of the modules needed for writing a program
+with Meridian and put them in a really annoying place (at some boint
+the build system will be better, and the place will be less
+annoyting).
+
+In order to compile and run the examples (or your own modules) you
+will need to add the directory that contains the `map_elites` behavior
+to the code path (shown below).
+
+```
+$ erl
+> code:add_path("/path/to/Meridian/_build/default/lib/Meridian/ebin").
+> c('examples/knapsack'). % or whatever
 ```
 
 #### TODO
