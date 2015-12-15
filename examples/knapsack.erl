@@ -10,7 +10,7 @@
 
 -record(item, {value, weight}).
 
--define(KNAPSACK_CAPACITY, 35).
+-define(KNAPSACK_CAPACITY, 400).
 -define(ITEMS_AND_WEIGHTS,
 	[ #item{value=10, weight=12},
 	  #item{value=9, weight=4},
@@ -92,7 +92,7 @@ evaluate(Genome) ->
 start(NumSeeds, NumIterations) ->
     map_elites:start(?MODULE, NumSeeds, 10, 
 		     [{name, ?MODULE}, 
-		      {granularity, 25},
+		      {granularity, 20},
 		      {iterations, NumIterations}]).
 
 

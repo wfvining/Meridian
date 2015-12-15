@@ -83,4 +83,5 @@ static(Callbacks, M=#mape{map=Map, granularity=Granularity}) ->
     io:format("VIZ: converting map to list~n"),
     FullMap = map_to_list(Callbacks, M, MaxFitness + 10),
     plot_map(GNUPlot, FullMap),
+    io:format("type 'quit' to exit~n"),
     wait_for_exit(GNUPlot).
