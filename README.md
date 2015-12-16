@@ -19,11 +19,19 @@ is here (http://arxiv.org/abs/1504.04909).
 ## How it works
 
 ### Version 1
-There is a master process which does no work except to track the total 
-number of iterations and terminate the workers when enough have been 
-performed. At that point the master loads the visualization. All workers 
-share access to an ETS table where they write the results of their 
-evaluations and drawn new genomes for mutation and evaluation.
+
+MapElites is defined as an OTP Behavior. In order to use it a module declasres 
+```erlang
+-behavior(map_elites).
+```
+and implements all of the required callbacks (described below). To run the algorithm 
+the function `map_elites:start/4` is called.
+
+When the algorithm starts there is a master process which does no work
+except to track the total number of iterations and terminate the workers 
+when enough have been performed. At that point the master loads the 
+visualization. All workers share access to an ETS table where they write 
+the results of their evaluations and drawn new genomes for mutation and evaluation.
 
 When workers receive a stop message from the master, they terminate. 
 Note that there is no guarantee that they will not do more iterations 
@@ -85,7 +93,7 @@ To build use rebar3 (http://github.com/rebar/rebar3).
 $ rebar3 compile
 ```
 
-This will make compile all of the modules needed for writing a program
+This will compile all of the modules needed for writing a program
 with Meridian and put them in a really annoying place (at some boint
 the build system will be better, and the place will be less
 annoyting).
@@ -114,7 +122,7 @@ $ erl
 
 **Utilities**
 
-[ ] Binary genomes
+[x] Binary genomes
 
 [ ] Crossover and selection (? select N cells at random, chose the
 "fittest one" and select the fittest neighbor -- out of eight
