@@ -57,7 +57,6 @@ init(Callbacks, InitialPopSize, Workers, Options) ->
     NumIterations = get_num_iterations(Options),
     Map = new_map(MapName, MapGranularity),
     {ok, WorkerPIDs} = start_workers(Callbacks, Workers, Map),
-    io:format("INFO: started ~p workers~n", [length(WorkerPIDs)]),
     Workers = length(WorkerPIDs),
     seed_map(InitialPopSize, WorkerPIDs),
     master(Callbacks, Map, WorkerPIDs, 0, NumIterations).
@@ -79,12 +78,45 @@ new_map(MapName, Granularity) ->
     #mape{map=ets:new(MapName, [set, public, named_table]),
 	  granularity=Granularity}.
 
+insert_sorted(_, X, []) -> [X];
+insert_sorted(Callbacks, X, [H|Tail]) -> 
+    case Callbacks:compare(X, H) of
+	true  -> [X, H | Tail];
+	false -> [H|insert_sorted(Callbacks, X, Tail)]
+    end.    
+
+%% XXX: this will be slow for large N.
+get_elites(Callbacks, Map, N) ->
+    ets:foldl(
+      fun({_Grid, Phenotype}, TopN) when length(TopN) < N ->
+	      lists:sort(fun(A, B) -> Callbacks:compare(B, A) end,
+			 [Phenotype|TopN]);
+	 ({_Grid, Phenotype}, TopN) ->
+	      lists:droplast(insert_sorted(Callbacks, Phenotype, TopN))
+      end, 
+      [], Map).
+
+print_elites(Callbacks, Map, N) ->
+    Elites = get_elites(Callbacks, Map, N),
+    print_elites(Elites).
+
+print_elites(Elites) ->
+    lists:foreach(fun({Rank, Phenotype}) ->
+			  io:format("~3.. B: ~p~n", [Rank, Phenotype])
+		  end, lists:zip(lists:seq(1, length(Elites)), Elites)).
+
+report(Callbacks, Iterations, Map) ->
+    io:format("------ Final Report ------~n"),
+    io:format("Iterations: ~p~n", [Iterations]),
+    io:format("------ Elites ------~n"),
+    print_elites(Callbacks, Map, 10).
+
 master(Callbacks, Map=#mape{map=Name}, Workers, Iterations, MaxIterations) 
   when Iterations >= MaxIterations ->
-    io:format("INFO: stopping workers~n"),
-    stop_workers(Workers),
+    ExtraIterations = stop_workers(Workers),
     %% Save the map.
     ets:tab2file(Name, atom_to_list(Name) ++ ".mape"),
+    report(Callbacks, Iterations + ExtraIterations, Name),
     visualization:static(Callbacks, Map),
     ets:delete(Name);
 master(Callbacks, Map, Workers, Iterations, MaxIterations) ->
@@ -97,18 +129,18 @@ master(Callbacks, Map, Workers, Iterations, MaxIterations) ->
 %% Stop all workers and wait for them to finish.
 stop_workers(Workers) ->
     lists:foreach(fun(W) -> stop_worker(W) end, Workers),
-    wait_for_workers(Workers).
+    wait_for_workers(Workers, 0).
 
 %% Wait for all worker processes to terminate, ensuring that they have
 %% reported the results of their final evaluation.
-wait_for_workers([]) ->
-    ok;
-wait_for_workers([W|Workers]) ->
+wait_for_workers([], Iterations) ->
+    Iterations;
+wait_for_workers([W|Workers], Iterations) ->
     receive
 	{W, done} ->
-	    io:format("INFO: Worker ~p stopped. Remaining workers: ~p~n", 
-		       [W, Workers]),
-	    wait_for_workers(Workers)
+	    wait_for_workers(Workers, Iterations);
+	{iteration, W, _} ->
+	    wait_for_workers([W|Workers], Iterations+1)
     end.
 
 behavior_to_grid(Callbacks, Behavior, Granularity) ->

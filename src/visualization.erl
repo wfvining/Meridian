@@ -80,7 +80,6 @@ static(Callbacks, M=#mape{map=Map, granularity=Granularity}) ->
     port_command(GNUPlot, "set yrange [0:"++G++"]\n"),
     port_command(GNUPlot, "set cbrange ["++Min++":"++Max++"]\n"),
     set_palette(jet, GNUPlot),
-    io:format("VIZ: converting map to list~n"),
     FullMap = map_to_list(Callbacks, M, MaxFitness + 10),
     plot_map(GNUPlot, FullMap),
     io:format("type 'quit' to exit~n"),
