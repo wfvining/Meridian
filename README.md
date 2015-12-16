@@ -75,7 +75,6 @@ the `map_elites` behavior.
 %% behavior descriptors must be non-negative.
 -callback to_behavior(phenotype()) -> list(float()).
 %% The returned tuples {A, B} must satisfy A < B furthermore the space
-%% must be non-negative.
 -callback behavior_space() -> list({float(), float()}).
 ```
 
