@@ -214,6 +214,7 @@ start_workers(Callbacks, Workers, Map) when is_integer(Workers) ->
 % start the worker processes
 start_worker(Callbacks, Node, Map) ->
     spawn_link(Node, ?MODULE, init_worker, [Callbacks, self(), Map]).
+
 start_worker(Callbacks, Map) ->
     spawn_link(?MODULE, init_worker, [Callbacks, self(), Map]).
 
@@ -237,10 +238,12 @@ insert_if_better(Callbacks, Map, Grid, Phenotype) ->
 	    end
     end.
 
-add_to_map(Callbacks, #mape{map=Map, granularity=Granularity}, Phenotype) ->
+add_to_map(Callbacks, M=#mape{map=Map, granularity=Granularity}, Phenotype) ->
     Behavior = Callbacks:to_behavior(Phenotype),
     Grid = behavior_to_grid(Callbacks, Behavior, Granularity),
-    insert_if_better(Callbacks, Map, Grid, Phenotype).
+    insert_if_better(Callbacks, Map, Grid, Phenotype),
+    %% This must come last, otherwise there will be a race condition.
+    update(M, Grid).
 
 report_iteration(Master, Phenotype) ->
     Master ! {iteration, self(), Phenotype}.
@@ -253,6 +256,7 @@ init_worker(Callbacks, Master, Map) ->
 	{Master, initialize, N} ->
 	    init_worker(Callbacks, Master, Map, N)
     end.
+
 init_worker(Callbacks, Master, Map, 0) ->
     worker(Callbacks, Master, Map);
 init_worker(Callbacks, Master, Map, N) ->
@@ -262,23 +266,22 @@ init_worker(Callbacks, Master, Map, N) ->
     report_iteration(Master, Phenotype),
     init_worker(Callbacks, Master, Map, N-1).
 
-get_random_genome(#mape{map=Map}) ->
-    MapSize = ets:info(Map, size),
-    %% uniform(N) returns a value in 1 to N, need 0 to N-1.
-    R = rand:uniform(MapSize)-1,
-    %% The method used here is quadratic in the number of entries in the table
-    %% (worst case this will be the granularity of the map.
-    {Genome, _} = getnth(R, Map, ets:first(Map)),
+get_random_genome(#mape{map=Map, map_index=Index}) ->
+    Size = ets:info(Index, size),
+    R = rand:uniform(Size),
+    Grid = ets:lookup_element(Index, R, 2),
+    {Genome, _} = ets:lookup_element(Map, Grid, 2),
     Genome.
-
-getnth(N, Map, Key) when N =< 1 ->
-    [{Key, Phenotype}] = ets:lookup(Map, Key),
-    Phenotype;
-getnth(N, Map, Key) ->
-    getnth(N-1, Map, ets:next(Map, Key)).
 
 finish(Master) ->
     Master ! {self(), done}.
+
+update(#mape{grid_index=GridIndex, map_index=Index}, Grid) ->
+    Size = ets:info(Index, size),
+    case ets:insert_new(GridIndex, {Grid, Size+1}) of
+	true  -> ets:insert(Index, {Size+1, Grid});
+	false -> true %% grid already filled nothing else needs to be done.
+    end.
 
 %% The worker process.
 worker(Callbacks, Master, Map) ->
