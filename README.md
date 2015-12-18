@@ -109,7 +109,7 @@ $ erl
 ```
 
 #### TODO
-[ ] Need a faster way to lookup a random genome from the map. Currently this process is 
+[x] Need a faster way to lookup a random genome from the map. Currently this process is 
     O(n^d) where n is the granularity of the map and d is the dimensionality of the behavior space.
     It turns out that random lookups in an
     ETS table are not so straight forward and the simplest solution is to treat it like 
