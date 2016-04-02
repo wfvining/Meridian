@@ -1,3 +1,5 @@
 *.beam
 *.mape
 *~
+_build
+rebar.lock
