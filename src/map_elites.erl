@@ -30,7 +30,6 @@
 start(Callbacks, InitialPopSize, Workers, Options) ->
     %% options specify the number of worker proceses to spawn
     %% TODO: read options and do what they say.
-    %apply(map_elites, init, [Callbacks, MapName|Args]).
     init(Callbacks, InitialPopSize, Workers, Options).
 
 %% functions for options
