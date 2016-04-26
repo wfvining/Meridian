@@ -3,7 +3,8 @@
 -export([compare/2, 
 	 merge/2, 
 	 tick/2, 
-	 set/3, 
+	 set/3,
+	 get_clock/2
 	 new/0]).
 
 -type vector_clock() :: map().
