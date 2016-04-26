@@ -1,27 +1,30 @@
-%%% The meridian worker module defines a genserver that manages a
-%%% worker process.
+%%% @author Will Vining <wfvining@gmail.com>
+%%% @copyright (C) 2016, Will Vining
+%%% @doc
+%%%
+%%% Basic worker process in charge or evaluating a genotype and
+%%% updating the meridian server running on its node.
+%%%
+%%% @end
+%%% Created : 22 Apr 2016 by Will Vining <wfvining@gmail.com>
+
 -module(meridian_worker).
 
--behavior(gen_server).
+-export([start/1]).
 
--export([init/1, terminate/2]).
--export([handle_call/3, handle_cast/2, handle_info/2]).
--export([code_change/3]).
+%%---------------------------------------------------------------------
+%% @doc
+%% Starts the worker and links to it.
+%% 
+%% @spec start(InitialGenotype, Callbacks) -> pid()
+%% @end
+%%---------------------------------------------------------------------
+start(InitialGenotype, Callbacks) ->
+    spawn_link(meridian_worker, worker, [Genotype, Callbacks]).
 
--export([start/0]).
-
-%%% forget about the gen_server for now. What operations does the
-%%% meridian_worker support?
-
-%% Generate and evaluate N random genotypes.
-seed(N) ->
-    undefined.
-
-%% send an update to other workers
-update(Workers, Phehotype) when is_list(Workers) ->
-    undefined;
-%update a single worker.
-update(Worker, Phenotype) ->
-    undefined.
-
-%% start evaluating 
+worker(Genotype, Callbacks) ->
+    {ok, Phenotype} = Callbacks:evaluate(Genotype),
+    case meridian_server:update(Phenotype) of
+	{continue, NewGenotype} -> worker(NewGenotype, Callbacks);
+	stop                    -> ok
+    end.
