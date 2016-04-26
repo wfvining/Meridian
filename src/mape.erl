@@ -5,7 +5,9 @@
 
 -include("map_elites.hrl").
 
--export([insert/2, new/3, lookup/1]).
+-export([insert/2, insert/2
+	 insert_all/2, insert_all/3,
+	 new/3, lookup/1, all_phenotypes/1]).
 
 -record(mape, {archive, granularity,
 	       index, grid_index, callbacks}).
@@ -27,48 +29,70 @@ seed_mape(MAPE=#mape{callbacks=Callbacks}, N) ->
     insert(MAPE, Phenotype),
     seed_mape(MAPE, N-1).
 
+%% Returns a list of all phenotypes in the archive
+-spec all_phenotypes( mape() ) -> [phenotype()].
+all_phenotypes(MAPE) ->
+    ets:foldl(fun({_Grid, Phenotype, _AddedBy}, Phenotypes) ->
+		      [Phenotype | Phenotypes]
+	      end, [], MAPE).
+
 -spec lookup( mape() ) -> genotype().
 %% Get a random genotype from the archive.
 lookup(#mape{archive=Archive, index=Index}) ->
     Size = ets:info(Index, size),
     R = rand:uniform(Size),
     Grid = ets:lookup_element(Index, R, 2),
-    {Genome, _} = ets:loopuk_element(Archive, Grid, 2),
+    {Genome, _} = ets:lookup_element(Archive, Grid, 2),
     Genome.
 
--spec insert( MAPE :: mape(), Phenotype :: phenotype() ) -> boolean().
+-spec insert_all(MAPE :: mape(), [phenotype()]) -> ok.
+insert_all(MAPE, Phenotypes) ->
+    insert_all(MAPE, Phenotypes, node()).
 
-insert(MAPE=#mape{callbacks=Callbacks, granularity=Granularity}, Phenotype) ->
+insert_all(_, [], _) -> ok;
+insert_all(MAPE, [Phenotype|Phenotypes], ByNode) -> 
+    insert(MAPE, Phenotype, ByNode),
+    insert_all(MAPE, Phenotypes, ByNode).
+
+insert(MAPE, Phenotype) ->
+    insert(MAPE, Phenotype, node()).
+
+insert(MAPE=#mape{callbacks=Callbacks, granularity=Granularity}, 
+       Phenotype, 
+       ByNode) ->
     Behavior = Callbacks:to_behavior(Phenotype),
     Grid = behavior_to_grid(Callbacks:behavior_space(), Granularity, Behavior),
-    insert_phenotype(MAPE, Grid, Phenotype).
+    insert_phenotype(MAPE, {Grid, Phenotype, ByNode}).
 
-insert_phenotype(MAPE, Grid, Phenotype) ->
-    insert_if_better(MAPE, Grid, Phenotype),
+insert_phenotype(MAPE, CandidatePhenotype = {Grid, _, _}) ->
+    insert_if_better(MAPE, CandidatePhenotype),
     update_index(MAPE, Grid).
 
 update_index(#mape{grid_index=GridIndex, index=ArchiveIndex}, Grid) ->
     Size = ets:info(ArchiveIndex, size),
     case ets:insert_new(GridIndex, {Grid, Size+1}) of
-	true   -> ets:insert(GridIndex, {Size+1, Grid});
-	false  -> true %% gris already filled, index does not need to be updated.
+	true   -> ets:insert(ArchiveIndex, {Size+1, Grid});
+	false  -> true % grid already filled, index does not need to be updated.
     end.
 
 %% add a phenotype to the map at the specified grid location _iff_ it
 %% is better than the phenotype already stored at that grid location.
 %% if no phenotype is already present then the provided phenotype is
 %% stored.
-insert_if_better(#mape{callbacks=Callbacks, archive=Archive}, Grid, Phenotype) ->
-    case ets:insert_new(Archive, {Grid, Phenotype}) of
+insert_if_better(#mape{callbacks=Callbacks, archive=Archive}, 
+		 CandidateEntry = {Grid, CandidatePhenotype, _}) ->
+    case ets:insert_new(Archive, CandidateEntry) of
 	true  -> true;
 	false -> 
-	    [{_, ExistingPhenotype}] = ets:lookup(Archive, Grid),
-	    case Callbacks:compare(ExistingPhenotype, Phenotype) of
+	    [{_, ExistingPhenotype, _}] = ets:lookup(Archive, Grid),
+	    case Callbacks:compare(ExistingPhenotype, CandidatePhenotype) 
+	    of
 		true  -> true;
-		false ->   ets:insert(Archive, {Grid, Phenotype})
+		false -> ets:insert(Archive, CandidateEntry)
 	    end
     end.
 
+%% NOTE: this is overly complicated.
 %% Convert a behavior description to a grid cell in the archive.
 behavior_to_grid(BehaviorSpace, Behavior, Granularity) ->
     %% Get the range for each dimension of the behavior space and Zip
