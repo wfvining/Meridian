@@ -5,4 +5,5 @@
 -define(DEFAULT_MAP_NAME, 'unnamed_mape').
 -define(DEFAULT_ITERATIONS, 5000).
 -define(DEFAULT_SEEDS, 5).
+-define(DEFAULT_MERGE_FREQUENCY, 10).
 
