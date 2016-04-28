@@ -17,6 +17,9 @@
 
 -record(merge_partner, {pid, port, host}).
 
+-type merge_partner() :: #merge_partner{}.
+-type merge_context() :: {vector_clock:vector_clock(), merge_partner()}.
+
 %% API
 -export([start/1, cancel/1, merge_all/3, merge/3]).
 -export([merge_wait/2]).
@@ -32,7 +35,6 @@
 %% @end
 %%--------------------------------------------------------------------
 start(MasterPid) ->
-    %%% NO NO NO. Get it together.
     case gen_tcp:listen(0, [binary]) of
         {ok, ListenSocket} ->
             {ok, Port} = inet:port(ListenSocket),
@@ -51,14 +53,19 @@ start(MasterPid) ->
 %% @spec
 %% @end
 %%--------------------------------------------------------------------
-cancel(HandlerPid) ->
+-spec cancel(merge_context()) -> cancel.
+cancel({_, #merge_partner{pid = HandlerPid}}) ->
     HandlerPid ! cancel.
 
+-spec merge_all([merge_context()], vector_clock:vector_clock(), mape:archive())
+               -> ok.
 merge_all([], _, _) -> ok;
 merge_all([MergePartner|MergePartners], LocalClock, Archive) ->
     merge(MergePartner, LocalClock, Archive),
     merge_all(MergePartners, LocalClock, Archive).
 
+-spec merge(merge_context(), vector_clock:vector_clock(), mape:archive())
+           -> merge_failed | ok.
 merge({PartnerClock, #merge_partner{port=Port, host=Host}},
        LocalClock, Archive) ->
     case gen_tcp:connect(Host, Port, []) of
@@ -74,6 +81,8 @@ merge({PartnerClock, #merge_partner{port=Port, host=Host}},
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+-spec merge_wait( pid(), gen_tcp:socket())
+                -> master_failed | merge_canceled | ok.
 merge_wait(Master, Socket) ->
     case gen_tcp:accept(Socket, ?MERGE_ACCEPT_TIMEOUT) of
         {ok, ConnectedSocket} ->
@@ -83,6 +92,8 @@ merge_wait(Master, Socket) ->
             io:format("~p: Merge failed due to ~p~n", node(), Other)
     end.
 
+-spec merge_receive({reference(), pid()}, gen_tcp:socket())
+                   -> master_failed | merge_canceled | ok.
 merge_receive({MRef, MPid}, Socket) ->
     receive
         {'DOWN', MRef, process, MPid, _} ->

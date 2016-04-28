@@ -7,7 +7,8 @@
          get_clock/2
          new/0]).
 
--type vector_clock() :: map().
+-type clock()        :: integer().
+-type vector_clock() :: map(node(), clock()).
 
 -spec new() -> vector_clock()
 new() -> maps:new().
@@ -37,11 +38,11 @@ merge(ClockA, ClockB) ->
                  end,
                  ClockA)).
 
--spec get_clock( vector_clock(), node() ) -> integer().
+-spec get_clock( vector_clock(), node() ) -> clock().
 get_clock(VectorClock, Node) ->
     maps:get(VectorClock, Node, 0).
 
 %%% set the "time" for an entry in the clock.
--spec set( vector_clock(), node(), integer() ) -> vector_clock().
+-spec set( vector_clock(), node(), clock() ) -> vector_clock().
 set(VectorClock, Node, Value) ->
     VectorClock#{Node => Value}.

@@ -57,6 +57,7 @@ start_link(Options) ->
 %% @spec update(Phenotype) -> stop | {continue, Genotype}
 %% @end
 %%--------------------------------------------------------------------
+-spec update(Phenotype :: phenotype()) -> {continue, genotype()} | stop.
 update(Phenotype) ->
     gen_server:call(?SERVER, {update, Phenotype}).
 
@@ -68,6 +69,8 @@ update(Phenotype) ->
 %% @spec request_merge(Clock) -> { [{Node, NodeClock}], UnresponsiveNodes }
 %% @end
 %%--------------------------------------------------------------------
+-spec request_merge(Clock :: vector_clock:vector_clock()) ->
+                           [ merge_handler:merge_context() ].
 request_merge(Clock) ->
     {Responses, _} = gen_server:multi_call(nodes(),
                                            ?SERVER,
@@ -75,6 +78,7 @@ request_merge(Clock) ->
                                            ?MERGE_REQUEST_TIMEOUT),
     choose_merge_partners(?NUM_MERGE_PARTNERS, Responses).
 
+-spec merge(MergeData :: binary()) -> ok.
 merge(MergeData) ->
     gen_server:cast(?SERVER, {merge, MergeData}).
 
@@ -225,6 +229,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%
 %% @end
 %%--------------------------------------------------------------------
+-spec get_option(atom(), [tuple()]) -> term().
 get_option(callback_module, Options) ->
     proplists:get_value(callback_module, Options);
 get_option(num_seeds, Options) ->
@@ -247,6 +252,7 @@ get_option(merge_frequency, Options) ->
 %%
 %% @end
 %%---------------------------------------------------------------------
+-spec start_workers(integer(), mape:archive(), module()) -> [pid()].
 start_workers(0, _, _) -> [];
 start_workers(NumWorkers, Archive, Callbacks) ->
     Worker = meridian_worker:start(mape:lookup(Archive), Callbacks),
@@ -260,6 +266,7 @@ start_workers(NumWorkers, Archive, Callbacks) ->
 %% @spec ready_for_merge(Clock, MeridianState) -> true | false
 %% @end
 %%---------------------------------------------------------------------
+-spec ready_for_merge(#meridian_state{}) -> boolean().
 ready_for_merge(#meridian_state{clock = Clock,
                                 merge_frequency=MergeFrequency}) ->
     vector_clock:get_clock(Clock, node()) rem MergeFrequency =:= 0.
@@ -272,14 +279,15 @@ do_merge(State = #meridian_state{clock = Clock, archive = Archive}) ->
         false -> ok
     end.
 
+-spec mape_complete(#meridian_state{}) -> boolean().
 mape_complete(#meridian_state{clock = Clock, num_iterations=N}) ->
     vector_clock:get_clock(Clock, node()) =:= N.
 
 %% Select N elements uniformly at random
+-spec choose_merge_partners(integer(), [merge_handler:merge_context()])
+                           -> [merge_handler:merge_context()].
 choose_merge_partners(0, List) ->
-    lists:foreach(fun({_, MergeHandler}) ->
-                          merge_handler:cancel(MergeHandler)
-                  end, List),
+    lists:foreach(fun merge_handler:cancel/1, List),
     [];
 choose_merge_partners(N, List) ->
     Choice = lists:nth(rand:uniform(length(List)), List),
