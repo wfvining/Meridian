@@ -10,21 +10,22 @@
 
 -module(meridian_worker).
 
--export([start/1]).
+-export([start/2]).
+-export([worker/2]).
 
 %%---------------------------------------------------------------------
 %% @doc
 %% Starts the worker and links to it.
-%% 
+%%
 %% @spec start(InitialGenotype, Callbacks) -> pid()
 %% @end
 %%---------------------------------------------------------------------
 start(InitialGenotype, Callbacks) ->
-    spawn_link(meridian_worker, worker, [Genotype, Callbacks]).
+    spawn_link(meridian_worker, worker, [InitialGenotype, Callbacks]).
 
 worker(Genotype, Callbacks) ->
     {ok, Phenotype} = Callbacks:evaluate(Genotype),
     case meridian_server:update(Phenotype) of
-	{continue, NewGenotype} -> worker(NewGenotype, Callbacks);
-	stop                    -> ok
+        {continue, NewGenotype} -> worker(NewGenotype, Callbacks);
+        stop                    -> ok
     end.
