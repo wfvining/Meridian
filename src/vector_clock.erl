@@ -4,13 +4,13 @@
          merge/2,
          tick/2,
          set/3,
-         get_clock/2
+         get_clock/2,
          new/0]).
 
 -type clock()        :: integer().
--type vector_clock() :: map(node(), clock()).
+-type vector_clock() :: map().
 
--spec new() -> vector_clock()
+-spec new() -> vector_clock().
 new() -> maps:new().
 
 %% return list of nodes in A that are ahead of B.
