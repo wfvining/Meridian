@@ -8,7 +8,7 @@
 -export([insert/3, insert/4,
          insert_all/3, insert_all/4,
          new/3, lookup/1, all_phenotypes/1]).
--export([get_updates/3, update_archive/2]).
+-export([get_updates/3, get_elites/2, update_archive/2]).
 
 -record(mape, {archive, granularity,
                index, grid_index, callbacks}).
@@ -36,6 +36,26 @@ seed_mape(MAPE=#mape{callbacks=Callbacks}, N) ->
     {ok, Phenotype} = Callbacks:evaluate(Genome),
     insert(MAPE, Phenotype, node(), 0),
     seed_mape(MAPE, N-1).
+
+-spec get_elites(archive(), integer()) -> [{grid(), phenotype()}].
+get_elites(#mape{callbacks=Callbacks, archive=Archive}, N) ->
+    ComparisonFun = fun({_, A}, {_, B})-> Callbacks:compare(A, B) end,
+    ets:foldl(
+      fun({Grid, Phenotype, _, _}, Elites) when length(Elites) < N ->
+              insert_sorted(ComparisonFun, {Grid, Phenotype},  Elites);
+         ({Grid, Phenotype, _, _}, Elites) ->
+              lists:droplast(insert_sorted(ComparisonFun,
+                                           {Grid, Phenotype},
+                                           Elites))
+      end, [], Archive).
+
+insert_sorted(_, Element, [])                   -> [Element];
+insert_sorted(ComparisonFun, Element, [H|Tail]) ->
+    case ComparisonFun(Element, H) of
+        true  -> [Element, H | Tail];
+        false -> insert_sorted(ComparisonFun, Element, Tail)
+    end.
+
 
 %% Get all the elements in MAPE that have not yet been seen according
 %% to ClockB. MAPE is assumed to be up to date with ClockA.
