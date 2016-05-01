@@ -13,17 +13,16 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1]).
+-export([start_link/3]).
 %% Client API
--export([update/1]).
+-export([update/2]).
 %% Server-to-Server API
--export([request_merge/1, merge/1]).
+-export([request_merge/2, merge/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--define(SERVER, ?MODULE).
 -define(MERGE_REQUEST_TIMEOUT, 50). % 50 ms should be plenty...
 -define(MERGE_TIMEOUT, 5000). % merges could take a long time.
 -define(NUM_MERGE_PARTNERS, 2).
@@ -33,7 +32,9 @@
                          merge_frequency,
                          num_iterations,
                          callbacks,
-                         workers=[]
+                         workers,
+                         worker_sup,
+                         name
                         }).
 
 %%%===================================================================
@@ -47,8 +48,11 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Options) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, Options, []).
+start_link(Name, Supervisor, Options) ->
+    %% The server must be registered in order for multicall to work in
+    %% request_merge.
+    gen_server:start_link({local, Name}, ?MODULE, {Name, Supervisor, Options},
+                          []).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -57,9 +61,9 @@ start_link(Options) ->
 %% @spec update(Phenotype) -> stop | {continue, Genotype}
 %% @end
 %%--------------------------------------------------------------------
--spec update(Phenotype :: phenotype()) -> {continue, genotype()} | stop.
-update(Phenotype) ->
-    gen_server:call(?SERVER, {update, Phenotype}).
+-spec update(atom(), Phenotype :: phenotype()) -> {continue, genotype()} | stop.
+update(ServerName, Phenotype) ->
+    gen_server:call(ServerName, {update, Phenotype}).
 
 %%--------------------------------------------------------------------
 %% @doc Request a merge from all known nodes. This allows us to track
@@ -69,18 +73,18 @@ update(Phenotype) ->
 %% @spec request_merge(Clock) -> { [{Node, NodeClock}], UnresponsiveNodes }
 %% @end
 %%--------------------------------------------------------------------
--spec request_merge(Clock :: vector_clock:vector_clock()) ->
-                           [ merge_handler:merge_context() ].
-request_merge(Clock) ->
+-spec request_merge(atom(), Clock :: vector_clock:vector_clock())
+                   -> [ merge_handler:merge_context() ].
+request_merge(ServerName, Clock) ->
     {Responses, _} = gen_server:multi_call(nodes(),
-                                           ?SERVER,
+                                           ServerName,
                                            {request_merge, Clock},
                                            ?MERGE_REQUEST_TIMEOUT),
     choose_merge_partners(?NUM_MERGE_PARTNERS, Responses).
 
--spec merge(MergeData :: binary()) -> ok.
-merge(MergeData) ->
-    gen_server:cast(?SERVER, {merge, MergeData}).
+-spec merge(atom() | pid(), MergeData :: binary()) -> ok.
+merge(Server, MergeData) ->
+    gen_server:cast(Server, {merge, MergeData}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -97,7 +101,8 @@ merge(MergeData) ->
 %%                     {stop, Reason}
 %% @end
 %%--------------------------------------------------------------------
-init(Options) ->
+init({Name, Supervisor, Options}) ->
+    process_flag(trap_exit, true),
     MAPElitesCallbacks = get_option(callback_module, Options),
     NumberOfSeeds = get_option(num_seeds, Options),
     ArchiveGranularity = get_option(granularity, Options),
@@ -109,15 +114,13 @@ init(Options) ->
           clock = vector_clock:set(vector_clock:new(), node(), NumberOfSeeds),
           merge_frequency = get_option(merge_frequency, Options),
           num_iterations = get_option(num_iterations, Options),
-          callbacks = MAPElitesCallbacks
+          callbacks = MAPElitesCallbacks,
+          name = Name
         },
     %% trap exits from worker processes. The server is linked to its
     %% worker processes so that they will crash if the server crashes.
-    process_flag(trap_exit, true),
-    Workers = start_workers(get_option(num_workers, Options),
-                            InitialState#meridian_state.archive,
-                            MAPElitesCallbacks),
-    {ok, InitialState#meridian_state{workers = Workers}}.
+    self() ! {start_workers, Supervisor, get_option(num_workers, Options)},
+    {ok, InitialState}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -136,8 +139,9 @@ init(Options) ->
 handle_call({update, Phenotype}, _From,
             State=#meridian_state{archive = Archive,
                                   clock   = Clock  } ) ->
-    mape:insert(Archive, Phenotype),
     NewClock = vector_clock:tick(Clock, node()),
+    mape:insert(Archive, Phenotype, NewClock),  % XXX: Make sure this is the
+                                                % right clock...
     do_merge(State#meridian_state{clock = NewClock}),
     Genotype = mape:lookup(Archive),
     case mape_complete(State#meridian_state{clock = NewClock}) of
@@ -178,14 +182,41 @@ handle_cast({merge, Data},
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_info({'EXIT', Pid, _Reason},
+handle_info({start_workers, Supervisor, NumWorkers},
+            State=#meridian_state{archive=Archive,
+                                  callbacks=Callbacks,
+                                  name=ServerName}) ->
+    {ok, WorkerSupervisor} =
+        supervisor:start_child(Supervisor,
+                               #{id => worker_supervisor,
+                                 start => {meridian_worker_sup, start_link,
+                                           [ServerName, Callbacks]},
+                                 shutdown => 10000,
+                                 type => supervisor,
+                                 modules => [meridian_worker_sup]}),
+    %% TODO: start the actual workers using worker_supervisor.
+    WrkrRefs = start_workers(NumWorkers, WorkerSupervisor, Archive),
+    {noreply, State#meridian_state{worker_sup = WorkerSupervisor,
+                                   workers=WrkrRefs}};
+handle_info({'DOWN', Ref, process, _, normal},
+            State=#meridian_state{workers=Workers}) ->
+    {noreply, State#meridian_state{
+                workers=gb_sets:del_element(Ref, Workers)}};
+handle_info({'DOWN', Ref, process, _, _},
             State=#meridian_state{workers=Workers,
                                   archive=Archive,
-                                  callbacks=Callbacks}) ->
-    NewPid = meridian_worker:start(mape:lookup(Archive), Callbacks),
-    NewState = State#meridian_state{
-                 workers = [NewPid | lists:delete(Workers, Pid)] },
-    {noreply, NewState};
+                                  worker_sup=WorkerSup}) ->
+    case gb_sets:is_element(Ref, Workers) of
+        true ->
+            NewRef = start_workers(1, WorkerSup, Archive),
+            NewState =
+                State#meridian_state{
+                  workers = gb_sets:union(NewRef,
+                                          gb_sets:del_element(Ref,Workers))},
+            {noreply, NewState};
+        false ->
+            {noreply, State}
+    end;
 handle_info({Ref, _}, State) when is_reference(Ref) ->
     %% discard timed-out responses from multi_call.
     %% XXX: may need to cancel merge requests here... or just let them time out.
@@ -239,7 +270,7 @@ get_option(granularity, Options) ->
 get_option(num_workers, Options) ->
     proplists:get_value(num_workers, Options, 1);
 get_option(num_iterations, Options) ->
-    proplists:get_valur(num_iterations, Options, ?DEFAULT_ITERATIONS);
+    proplists:get_value(num_iterations, Options, ?DEFAULT_ITERATIONS);
 get_option(merge_frequency, Options) ->
     proplists:get_value(merge_frequency, Options, ?DEFAULT_MERGE_FREQUENCY).
 
@@ -252,11 +283,13 @@ get_option(merge_frequency, Options) ->
 %%
 %% @end
 %%---------------------------------------------------------------------
--spec start_workers(integer(), mape:archive(), module()) -> [pid()].
-start_workers(0, _, _) -> [];
-start_workers(NumWorkers, Archive, Callbacks) ->
-    Worker = meridian_worker:start(mape:lookup(Archive), Callbacks),
-    [Worker | start_workers(NumWorkers - 1, Archive, Callbacks)].
+-spec start_workers(integer(), pid(), mape:archive())
+                   -> gb_sets:set().
+start_workers(0, _, _) -> gb_sets:new();
+start_workers(NumWorkers, Supervisor, Archive) ->
+    {ok, Worker} = supervisor:start_child(Supervisor, [mape:lookup(Archive)]),
+    Ref = erlang:monitor(process, Worker),
+    gb_sets:add(Ref, start_workers(NumWorkers-1, Supervisor, Archive)).
 
 %%---------------------------------------------------------------------
 %% @private
@@ -269,19 +302,22 @@ start_workers(NumWorkers, Archive, Callbacks) ->
 -spec ready_for_merge(#meridian_state{}) -> boolean().
 ready_for_merge(#meridian_state{clock = Clock,
                                 merge_frequency=MergeFrequency}) ->
-    vector_clock:get_clock(Clock, node()) rem MergeFrequency =:= 0.
+    (vector_clock:get_clock(Clock, node()) rem MergeFrequency) =:= 0.
 
-do_merge(State = #meridian_state{clock = Clock, archive = Archive}) ->
+do_merge(State = #meridian_state{
+                    clock = Clock,
+                    archive = Archive,
+                    name = Name}) ->
     case ready_for_merge(State) of
         true  ->
-            MergePartners = meridian_server:request_merge(Clock),
+            MergePartners = meridian_server:request_merge(Name, Clock),
             merge_handler:merge_all(MergePartners, Clock, Archive);
         false -> ok
     end.
 
 -spec mape_complete(#meridian_state{}) -> boolean().
 mape_complete(#meridian_state{clock = Clock, num_iterations=N}) ->
-    vector_clock:get_clock(Clock, node()) =:= N.
+    vector_clock:get_clock(Clock, node()) >= N.
 
 %% Select N elements uniformly at random
 -spec choose_merge_partners(integer(), [merge_handler:merge_context()])
@@ -291,4 +327,4 @@ choose_merge_partners(0, List) ->
     [];
 choose_merge_partners(N, List) ->
     Choice = lists:nth(rand:uniform(length(List)), List),
-    [Choice | choose_merge_partners(N-1, lists:delete(Choice))].
+    [Choice | choose_merge_partners(N-1, lists:delete(Choice, List))].

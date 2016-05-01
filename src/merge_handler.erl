@@ -81,7 +81,7 @@ merge({PartnerClock, #merge_partner{port=Port, host=Host}},
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
--spec merge_wait( pid(), gen_tcp:socket())
+-spec merge_wait({reference(),pid()} , gen_tcp:socket())
                 -> master_failed | merge_canceled | ok.
 merge_wait(Master, Socket) ->
     case gen_tcp:accept(Socket, ?MERGE_ACCEPT_TIMEOUT) of
@@ -89,7 +89,7 @@ merge_wait(Master, Socket) ->
             gen_tcp:close(Socket), % close the listen socket.
             merge_receive(Master, ConnectedSocket);
         Other  ->
-            io:format("~p: Merge failed due to ~p~n", node(), Other)
+            io:format("~p: Merge failed due to ~p~n", [node(), Other])
     end.
 
 -spec merge_receive({reference(), pid()}, gen_tcp:socket())
@@ -103,6 +103,6 @@ merge_receive({MRef, MPid}, Socket) ->
             gen_tcp:close(Socket),
             merge_canceled;
         {tcp, Socket, MergeData} ->
-            meridian_server:merge(MergeData),
+            meridian_server:merge(MPid, MergeData),
             gen_tcp:close(Socket)
     end.

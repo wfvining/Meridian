@@ -10,8 +10,9 @@
          new/3, lookup/1, all_phenotypes/1]).
 -export([get_updates/3, get_elites/2, update_archive/2]).
 
--record(mape, {archive, granularity,
-               index, grid_index, callbacks}).
+-record(mape, {archive :: ets:tab(), granularity :: integer(),
+               index :: ets:tab(), grid_index :: ets:tab(),
+               callbacks :: module()}).
 
 -type archive()         :: #mape{}.
 -type grid()            :: [integer()].
@@ -61,17 +62,17 @@ insert_sorted(ComparisonFun, Element, [H|Tail]) ->
 %% to ClockB. MAPE is assumed to be up to date with ClockA.
 -spec get_updates(vector_clock:vector_clock(), vector_clock:vector_clock(),
                   archive()) -> [archive_element()].
-get_updates(ClockA, ClockB, MAPE) ->
+get_updates(ClockA, ClockB, #mape{archive=Archive}) ->
     %% for each nod in A diff B extract all phenotypes inserted by
     %% that node after ClockA[node()] and before ClockB[node()].
     %% Match specs !!! Finally, ets isnt overkill.
     UpdatedNodes = vector_clock:compare(ClockA, ClockB),
     lists:flatmap(
       fun(Node) ->
-              ets:select(MAPE,
-                         {{'_', '_', Node, '$1'},
-                          [{'>', '$1', vector_clock:get_clock(ClockB)}],
-                          ['$_']})
+              ets:select(Archive,
+                         [{{'_', '_', Node, '$1'},
+                           [{'>', '$1', vector_clock:get_clock(ClockB, Node)}],
+                           ['$_']}])
       end, UpdatedNodes).
 
 -spec update_archive(archive(), [archive_element()]) -> ok.
@@ -80,10 +81,10 @@ update_archive(MAPE, Updates) ->
 
 %% Returns a list of all phenotypes in the archive
 -spec all_phenotypes( archive() ) -> [phenotype()].
-all_phenotypes(MAPE) ->
-    ets:foldl(fun({_Grid, Phenotype, _AddedBy}, Phenotypes) ->
+all_phenotypes(#mape{archive=Archive}) ->
+    ets:foldl(fun({_, Phenotype, _, _}, Phenotypes) ->
                       [Phenotype | Phenotypes]
-              end, [], MAPE).
+              end, [], Archive).
 
 -spec lookup( archive() ) -> genotype().
 %% Get a random genotype gfrom the archive.
@@ -115,7 +116,7 @@ insert(MAPE=#mape{callbacks=Callbacks, granularity=Granularity},
        ByNode,
        NodeClock) ->
     Behavior = Callbacks:to_behavior(Phenotype),
-    Grid = behavior_to_grid(Callbacks:behavior_space(), Granularity, Behavior),
+    Grid = behavior_to_grid(Callbacks:behavior_space(), Behavior, Granularity),
     insert_phenotype(MAPE, {Grid, Phenotype, ByNode, NodeClock}).
 
 -spec insert_phenotype(archive(), archive_element()) -> boolean().
@@ -157,6 +158,8 @@ behavior_to_grid(BehaviorSpace, Behavior, Granularity) ->
     %% it with the corresponding dimension in the behavior
     %% description.
     behavior_to_grid(lists:zip(BehaviorSpace, Behavior), Granularity).
+-spec behavior_to_grid([{{float(), float()}, float()}], integer())
+                      -> grid().
 behavior_to_grid([], _) -> [];
 behavior_to_grid([{{Min, Max}, B}|Behaviors], Granularity) ->
     BinSize = (Max - Min) / Granularity,

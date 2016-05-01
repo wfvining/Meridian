@@ -40,7 +40,7 @@ merge(ClockA, ClockB) ->
 
 -spec get_clock( vector_clock(), node() ) -> clock().
 get_clock(VectorClock, Node) ->
-    maps:get(VectorClock, Node, 0).
+    maps:get(Node, VectorClock, 0).
 
 %%% set the "time" for an entry in the clock.
 -spec set( vector_clock(), node(), clock() ) -> vector_clock().
