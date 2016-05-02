@@ -50,7 +50,7 @@ handle_info(timeout, State=#state{genotype=Genotype,
     {ok, Phenotype} = Callbacks:evaluate(Genotype),
     case meridian_server:update(ServerName, Phenotype) of
         {continue, NewGenotype} ->
-            {noreply, State#state{genotype=NewGenotype}, 0};
+            {noreply, State#state{genotype=Callbacks:mutate(NewGenotype)}, 0};
         stop ->
             {stop, normal, State}
     end.
