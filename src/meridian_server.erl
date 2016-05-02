@@ -138,14 +138,19 @@ init({Name, Supervisor, Options}) ->
 %%--------------------------------------------------------------------
 handle_call({update, Phenotype}, _From,
             State=#meridian_state{archive = Archive,
-                                  clock   = Clock  } ) ->
+                                  clock   = Clock,
+                                  workers = _Workers} ) ->
     NewClock = vector_clock:tick(Clock, node()),
     mape:insert(Archive, Phenotype, NewClock),  % XXX: Make sure this is the
                                                 % right clock...
     do_merge(State#meridian_state{clock = NewClock}),
     Genotype = mape:lookup(Archive),
     case mape_complete(State#meridian_state{clock = NewClock}) of
-        true  -> {reply, stop, State};
+        true  ->
+            report(Archive),
+            %% remove worker from worker set - don't want to restart it
+            %% XXX: Need to find the monitor ref!!!!!!!!!
+            {reply, stop, State}; %% don't shut down. May need to merge still.
         false -> {reply, {continue, Genotype},
                   State#meridian_state{ clock = NewClock }}
     end;
@@ -322,9 +327,18 @@ mape_complete(#meridian_state{clock = Clock, num_iterations=N}) ->
 %% Select N elements uniformly at random
 -spec choose_merge_partners(integer(), [merge_handler:merge_context()])
                            -> [merge_handler:merge_context()].
+choose_merge_partners(_, [])   -> [];
 choose_merge_partners(0, List) ->
     lists:foreach(fun merge_handler:cancel/1, List),
     [];
 choose_merge_partners(N, List) ->
     Choice = lists:nth(rand:uniform(length(List)), List),
     [Choice | choose_merge_partners(N-1, lists:delete(Choice, List))].
+
+-spec report( mape:archive() ) -> ok.
+report(Archive) ->
+    Elites = mape:get_elites(Archive, 10),
+    lists:foreach(fun({Rank, {Grid, Phenotype}}) ->
+                          io:format("~3.. B: ~p - ~p~n", 
+                                    [Rank, Grid, Phenotype])
+                  end, lists:zip(lists:seq(1, length(Elites)), Elites)).
