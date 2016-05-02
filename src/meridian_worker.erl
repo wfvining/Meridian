@@ -30,7 +30,7 @@ start_link(ServerName, Callbacks, InitialGenotype) ->
 init({InitialGenotype, ServerName, Callbacks}) ->
     {ok, #state{genotype=InitialGenotype,
                 server_name=ServerName,
-                callbacks=Callbacks}}.
+                callbacks=Callbacks}, 0}.
 
 handle_call(_Call, _From, State) ->
     {noreply, State, 0}.
@@ -52,5 +52,5 @@ handle_info(timeout, State=#state{genotype=Genotype,
         {continue, NewGenotype} ->
             {noreply, State#state{genotype=NewGenotype}, 0};
         stop ->
-            {stop, worker_done, State}
+            {stop, normal, State}
     end.
