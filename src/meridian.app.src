@@ -1,0 +1,21 @@
+{application, meridian,
+ [{description, "An OTP application implementing the MapElites algorithm"},
+  {vsn, "0.2.1"},
+  {registered, [meridian]},
+  {applications,
+   [kernel,
+    stdlib
+   ]},
+  {env,[]},
+  {modules, [meridian_server,
+             meridian_worker,
+             mape,
+             vector_clock,
+             meridian_supersup,
+             meridian_sup,
+             meridian_worker_sup,
+             continuous, bits, util, visualization]},
+  {contributors, []},
+  {licenses, []},
+  {links, []}
+ ]}.
