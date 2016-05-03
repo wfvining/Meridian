@@ -8,7 +8,8 @@
 -export([insert/3, insert/4,
          insert_all/3, insert_all/4,
          new/3, lookup/1, all_phenotypes/1]).
--export([get_updates/3, get_elites/2, update_archive/2]).
+-export([get_updates/3, get_node_updates/3, get_node_updates/1,
+         get_elites/2, update_archive/2]).
 
 -record(mape, {archive :: ets:tab(), granularity :: integer(),
                index :: ets:tab(), grid_index :: ets:tab(),
@@ -74,6 +75,17 @@ get_updates(ClockA, ClockB, #mape{archive=Archive}) ->
                            [{'>', '$1', vector_clock:get_clock(ClockB, Node)}],
                            ['$_']}])
       end, UpdatedNodes).
+
+-spec get_node_updates({node(), vector_clock:clock()}, archive(), integer()) 
+                      -> {[archive_element()], 
+                          ets:continuation() | '$end_of_table'}.
+get_node_updates({Node, NodeClock}, #mape{archive=Archive}, ChunkSize) ->
+    ets:select(Archive, [{{'_', '_', Node, '$1'},
+                                [{'>', '$1', NodeClock}],
+                                ['$_']}], ChunkSize).
+
+get_node_updates(Continuation) ->
+    ets:select(Continuation).
 
 -spec update_archive(archive(), [archive_element()]) -> ok.
 update_archive(MAPE, Updates) ->

@@ -17,7 +17,7 @@
 %% Client API
 -export([update/2]).
 %% Server-to-Server API
--export([request_merge/2, merge/2]).
+-export([request_merge/2, merge/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -76,15 +76,18 @@ update(ServerName, Phenotype) ->
 -spec request_merge(atom(), Clock :: vector_clock:vector_clock())
                    -> [ merge_handler:merge_context() ].
 request_merge(ServerName, Clock) ->
+    %%% TODO: XXX: Need to unzip the node names from Responses
     {Responses, _} = gen_server:multi_call(nodes(),
                                            ServerName,
                                            {request_merge, Clock},
                                            ?MERGE_REQUEST_TIMEOUT),
-    choose_merge_partners(?NUM_MERGE_PARTNERS, Responses).
+    {_, ResponsivePartners} = lists:unzip(Responses),
+    choose_merge_partners(?NUM_MERGE_PARTNERS, ResponsivePartners).
 
--spec merge(atom() | pid(), MergeData :: binary()) -> ok.
-merge(Server, MergeData) ->
-    gen_server:cast(Server, {merge, MergeData}).
+-spec merge(atom() | pid(), vector_clock:vector_clock(), 
+            [mape:archive_element()]) -> ok.
+merge(Server, MergeClock, MergeData) ->
+    gen_server:cast(Server, {merge, MergeClock, MergeData}).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -102,7 +105,6 @@ merge(Server, MergeData) ->
 %% @end
 %%--------------------------------------------------------------------
 init({Name, Supervisor, Options}) ->
-    process_flag(trap_exit, true),
     MAPElitesCallbacks = get_option(callback_module, Options),
     NumberOfSeeds = get_option(num_seeds, Options),
     ArchiveGranularity = get_option(granularity, Options),
@@ -170,10 +172,9 @@ handle_call({request_merge, _RemoteClock}, _From,
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_cast({merge, Data},
+handle_cast({merge, MergeClock, MergeData},
             State=#meridian_state{clock = Clock, archive = Archive}) ->
-    {MergeClock, MergeUpdates} = binary_to_term(Data),
-    mape:update_archive(Archive, MergeUpdates),
+    mape:update_archive(Archive, MergeData),
     NewClock = vector_clock:merge(MergeClock, Clock),
     {noreply, State#meridian_state{ clock=NewClock }}.
 

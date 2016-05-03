@@ -22,7 +22,7 @@
 
 %% API
 -export([start/1, cancel/1, merge_all/3, merge/3]).
--export([merge_wait/2]).
+-export([merge_receive/1]).
 
 %%%===================================================================
 %%% API
@@ -35,16 +35,8 @@
 %% @end
 %%--------------------------------------------------------------------
 start(MasterPid) ->
-    case gen_tcp:listen(0, [binary]) of
-        {ok, ListenSocket} ->
-            {ok, Port} = inet:port(ListenSocket),
-            MasterRef = monitor(process, MasterPid),
-            #merge_partner{pid=spawn(?MODULE, merge_wait,
-                                     [{MasterRef, MasterPid}, ListenSocket]),
-                           port=Port,
-                           host=net_adm:localhost()};
-        Other -> {merge_failed, Other}
-    end.
+    MasterRef = monitor(process, MasterPid),
+    #merge_partner{pid=spawn(?MODULE, merge_receive, [{MasterRef, MasterPid}])}.
 
 %%--------------------------------------------------------------------
 %% @doc cancel a merge request. Causes the merge handler process to
@@ -65,44 +57,94 @@ merge_all([MergePartner|MergePartners], LocalClock, Archive) ->
     merge_all(MergePartners, LocalClock, Archive).
 
 -spec merge(merge_context(), vector_clock:vector_clock(), mape:archive())
-           -> merge_failed | ok.
-merge({PartnerClock, #merge_partner{port=Port, host=Host}},
+           -> {updates_done, vector_clock:vector_clock()}.
+merge({PartnerClock, #merge_partner{pid=PartnerPid}},
        LocalClock, Archive) ->
-    case gen_tcp:connect(Host, Port, []) of
-        {ok, Socket} ->
-            Updates = mape:get_updates(LocalClock, PartnerClock, Archive),
-            %% XXX: fails silently
-            %% (if the socket has been closed returns {error, closed})
-            gen_tcp:send(Socket, term_to_binary(Updates)),
-            gen_tcp:close(Socket);
-        {error, _} -> merge_failed
-    end.
+    lists:foreach(
+      fun(Node) ->
+              send_updates({Node, vector_clock:get_clock(PartnerClock, Node)},
+                           PartnerPid, Archive),
+              PartnerPid ! {node_updated, Node,
+                            vector_clock:get_clock(LocalClock, Node)}
+      end, vector_clock:compare(LocalClock, PartnerClock)),
+    PartnerPid ! {updates_done, LocalClock}.
+
+%% Leaving this for now... just in case... Should use vc more effectively.
+    %% case gen_tcp:connect(Host, Port, []) of
+    %%     {ok, Socket} ->
+    %%         Updates = mape:get_updates(LocalClock, PartnerClock, Archive),
+    %%         %% XXX: fails silently
+    %%         %% (if the socket has been closed returns {error, closed})
+    %%         ok = gen_tcp:send(Socket, term_to_binary({LocalClock, Updates})),
+    %%         gen_tcp:close(Socket);
+    %%     {error, _} -> merge_failed
+    %% end.
+
+%% XXX: this is less efficient than the previous method since it
+%% requires traversing the archive several times. It does, however,
+%% allow for incremental merges. This means that if the network goes
+%% down part way through a merge, it is still possible that the 
+%% merge partner will have received at least some of the data.
+send_updates(N={Node, _}, PartnerPid, Archive) ->
+    UpdateChunk = mape:get_node_updates(N, Archive, 100),
+    send_updates_chunk(Node, PartnerPid, UpdateChunk).
+%% XXX: should separate the behavior here from ets... have mape return
+%% some other value.
+send_updates_chunk(_, _, '$end_of_table') -> ok;
+send_updates_chunk(Node,
+             PartnerPid, 
+             {UpdateChunk, Continuation}) -> 
+    PartnerPid ! {updates, Node, UpdateChunk},
+    send_updates_chunk(Node, PartnerPid, mape:get_node_updates(Continuation)).
 
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
--spec merge_wait({reference(),pid()} , gen_tcp:socket())
-                -> master_failed | merge_canceled | ok.
-merge_wait(Master, Socket) ->
-    case gen_tcp:accept(Socket, ?MERGE_ACCEPT_TIMEOUT) of
-        {ok, ConnectedSocket} ->
-            gen_tcp:close(Socket), % close the listen socket.
-            merge_receive(Master, ConnectedSocket);
-        Other  ->
-            io:format("~p: Merge failed due to ~p~n", [node(), Other])
-    end.
-
--spec merge_receive({reference(), pid()}, gen_tcp:socket())
+-spec merge_receive({reference(), pid()}) 
                    -> master_failed | merge_canceled | ok.
-merge_receive({MRef, MPid}, Socket) ->
+merge_receive(Master) ->
+    merge_receive(Master, []).
+
+-spec merge_receive({reference(), pid()}, [mape:archive_element()])
+                   -> master_failed | merge_canceled | ok.
+merge_receive(Master={MRef, MPid}, PartialMergeData) ->
     receive
+        cancel -> merge_canceled;
+        {updates, _Node, UpdateChunk} ->
+            merge_receive(Master, UpdateChunk ++ PartialMergeData);
+        {node_updated, Node, Clock} ->
+            meridian_server:merge(
+              MPid, vector_clock:set(vector_clock:new(), Node, Clock), 
+              PartialMergeData),
+            merge_receive(Master, []);
+        {updates_done, _Clock} ->
+            ok;
         {'DOWN', MRef, process, MPid, _} ->
-            gen_tcp:close(Socket),
-            master_failed;
-        cancel ->
-            gen_tcp:close(Socket),
-            merge_canceled;
-        {tcp, Socket, MergeData} ->
-            meridian_server:merge(MPid, MergeData),
-            gen_tcp:close(Socket)
+            master_failed
     end.
+            
+%% -spec merge_wait({reference(),pid()} , gen_tcp:socket())
+%%                 -> master_failed | merge_canceled | ok.
+%% merge_wait(Master, Socket) ->
+%%     case gen_tcp:accept(Socket, ?MERGE_ACCEPT_TIMEOUT) of
+%%         {ok, ConnectedSocket} ->
+%%             merge_receive(Master, ConnectedSocket),
+%%             gen_tcp:close(Socket); % close the listen socket.
+%%         Other  ->
+%%             io:format("~p: Merge failed due to ~p~n", [node(), Other])
+%%     end.
+
+%% -spec merge_receive({reference(), pid()}, gen_tcp:socket())
+%%                    -> master_failed | merge_canceled | ok.
+%% merge_receive({MRef, MPid}, Socket) ->
+%%     receive
+%%         {'DOWN', MRef, process, MPid, _} ->
+%%             gen_tcp:close(Socket),
+%%             master_failed;
+%%         cancel ->
+%%             gen_tcp:close(Socket),
+%%             merge_canceled;
+%%         {tcp, Socket, MergeData} ->
+%%             meridian_server:merge(MPid, MergeData),
+%%             gen_tcp:close(Socket)
+%%     end.
