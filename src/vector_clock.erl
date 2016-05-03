@@ -29,14 +29,15 @@ tick(VectorClock, Node) ->
 %%% return the least common descendent of the two vector clocks.
 -spec merge( vector_clock(), vector_clock() ) -> vector_clock().
 merge(ClockA, ClockB) ->
-    %% second map supercedes first in merge. Filtering makes sure that
-    %% only higher timestamps are in the second map.
-    maps:merge(ClockA,
-               maps:filter(
-                 fun(Node, Timestamp) ->
-                         maps:get(Node, ClockB, 0) < Timestamp
-                 end,
-                 ClockA)).
+    ASupercedes = maps:filter(
+                    fun(Node, Value) ->
+                            vector_clock:get_clock(ClockB, Node) < Value
+                    end, ClockA),
+    BSupercedes = maps:filter(
+                    fun(Node, Value) ->
+                            vector_clock:get_clock(ClockA, Node) < Value
+                    end, ClockB),
+    maps:merge(ASupercedes, BSupercedes).
 
 -spec get_clock( vector_clock(), node() ) -> clock().
 get_clock(VectorClock, Node) ->
