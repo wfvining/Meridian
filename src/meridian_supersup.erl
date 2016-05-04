@@ -11,7 +11,7 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0, start_mapelites/2, stop_mapelites/1, stop/0]).
+-export([start_link/0, start_mapelites/2, stop_mapelites/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -29,13 +29,6 @@
 %%--------------------------------------------------------------------
 start_link() ->
     supervisor:start_link({local, meridian}, ?MODULE, []).
-
-stop() ->
-    case whereis(meridian) of
-        P when is_pid(P) ->
-            exit(P, kill);
-        _ -> ok
-    end.
 
 start_mapelites(Name, MeridianOptions) ->
     ChildSpec = #{id       => Name,
@@ -71,8 +64,8 @@ stop_mapelites(Name) ->
 init([]) ->
 
     SupFlags = #{strategy => one_for_one,
-                 intensity => 10,
-                 period => 100},
+                 intensity => 0,
+                 period => 1},
 
     {ok, {SupFlags, []}}. % instances of Meridian are added dynamically
 
