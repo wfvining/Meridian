@@ -6,7 +6,7 @@
          to_behavior/1, behavior_space/0]).
 
 -export([generate_items/3]).
--export([start/0]).
+-export([start/1]).
 
 -define(KNAPSACK_CAPACITY, 5000).
 -define(NUM_ITEMS, 5000).
@@ -89,9 +89,9 @@ mutate(Genome) ->
         false -> mutate(Genome)
     end.
 
-start() ->
+start(NumIterations) ->
     application:start(meridian),
     meridian:start_mapelites(big_knapsack, [{callback_module, big_knapsack},
                                             {granularity, 256},
-                                            {num_iterations, 1000000},
-                                            {merge_frequency, 100}]).
+                                            {num_iterations, NumIterations},
+                                            {merge_frequency, 10}]).
