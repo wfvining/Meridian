@@ -89,9 +89,9 @@ mutate(Genome) ->
         false -> mutate(Genome)
     end.
 
-start(NumIterations) ->
+start(NumIterations, MergeFreq) ->
     application:start(meridian),
     meridian:start_mapelites(big_knapsack, [{callback_module, big_knapsack},
                                             {granularity, 256},
                                             {num_iterations, NumIterations},
-                                            {merge_frequency, 10}]).
+                                            {merge_frequency, MergeFreq}]).
