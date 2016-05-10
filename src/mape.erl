@@ -55,7 +55,7 @@ insert_sorted(_, Element, [])                   -> [Element];
 insert_sorted(ComparisonFun, Element, [H|Tail]) ->
     case ComparisonFun(Element, H) of
         true  -> [Element, H | Tail];
-        false -> insert_sorted(ComparisonFun, Element, Tail)
+        false -> [H | insert_sorted(ComparisonFun, Element, Tail)]
     end.
 
 
