@@ -169,6 +169,10 @@ ok
 The program will run to completion and print a report when it is finished
 indicating the top 10 phenotypes.
 
+## Examples
+Examples of modules using the map_elites behavior are included in the [examples](https://github.com/wfvining/Meridian/tree/master/examples) folder.
+None of these are particularly good example of MAP-Elites... those are forthcoming.
+
 ## Future Improvements
 - Web interface (or some other kind of interface) to observe instances of MAPElites as they run.
 - Run continuously without stopping
