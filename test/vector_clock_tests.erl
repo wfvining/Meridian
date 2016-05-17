@@ -51,7 +51,7 @@ merge_test() ->
     ?assertEqual(1, vector_clock:get_clock(MergedClock, e)),
     ?assertEqual(2, vector_clock:get_clock(MergedClock, f)).
 
-compart_test() ->
+compare_test() ->
     VectorClockA = 
         vector_clock:set(
           vector_clock:set(
