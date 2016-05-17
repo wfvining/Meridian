@@ -13,12 +13,19 @@
 -spec new() -> vector_clock().
 new() -> maps:new().
 
-%% return list of nodes in A that are ahead of B.
+%%--------------------------------------------------------------- 
+%% @doc 
+%% Returns a list of the "nodes" in ClockA that supercede 
+%% the entries for those nodes in ClockB.
+%% @end
+%%---------------------------------------------------------------
 -spec compare( vector_clock(), vector_clock() ) -> [node()].
 compare(ClockA, ClockB) ->
     maps:keys(
       maps:filter(
-        fun(Node, Timestamp) -> maps:get(Node, ClockB, 0) < Timestamp end,
+        fun(Node, Timestamp) -> 
+                vector_clock:get_clock(ClockB, Node) < Timestamp
+        end,
         ClockA)).
 
 %% increment the timestamp for Node.
