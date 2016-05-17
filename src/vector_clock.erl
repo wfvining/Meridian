@@ -31,11 +31,11 @@ tick(VectorClock, Node) ->
 merge(ClockA, ClockB) ->
     ASupercedes = maps:filter(
                     fun(Node, Value) ->
-                            vector_clock:get_clock(ClockB, Node) < Value
+                            vector_clock:get_clock(ClockB, Node) =< Value
                     end, ClockA),
     BSupercedes = maps:filter(
                     fun(Node, Value) ->
-                            vector_clock:get_clock(ClockA, Node) < Value
+                            vector_clock:get_clock(ClockA, Node) =< Value
                     end, ClockB),
     maps:merge(ASupercedes, BSupercedes).
 
