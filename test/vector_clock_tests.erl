@@ -76,9 +76,9 @@ compart_test() ->
           e, 1),
     ?assertEqual(
        lists:sort([a, c, e]), 
-       lists:sort(vector_clock:compare(VectorClockA, VectorClockB))),
+       lists:sort(vector_clock:compare(VectorClockB, VectorClockA))),
     ?assertEqual(
        lists:sort([f, d]),
-       lists:sort(vector_clock:compare(VectorClockB, VectorClockA))),
+       lists:sort(vector_clock:compare(VectorClockA, VectorClockB))),
     ?assertEqual([], vector_clock:compare(VectorClockA, VectorClockA)).
 
