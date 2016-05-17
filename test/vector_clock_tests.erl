@@ -48,4 +48,37 @@ merge_test() ->
     ?assertEqual(2, vector_clock:get_clock(MergedClock, b)),
     ?assertEqual(4, vector_clock:get_clock(MergedClock, c)),
     ?assertEqual(4, vector_clock:get_clock(MergedClock, d)),
-    ?assertEqual(1, vector_clock:get_clock(MergedClock, e)).
+    ?assertEqual(1, vector_clock:get_clock(MergedClock, e)),
+    ?assertEqual(2, vector_clock:get_clock(MergedClock, f)).
+
+compart_test() ->
+    VectorClockA = 
+        vector_clock:set(
+          vector_clock:set(
+            vector_clock:set(
+              vector_clock:set(
+                vector_clock:set(
+                  vector_clock:new(), f, 2),
+                a, 1),
+              b, 2),
+            c, 3),
+          d, 4),
+    VectorClockB = 
+        vector_clock:set(
+          vector_clock:set(
+            vector_clock:set(
+              vector_clock:set(
+                vector_clock:set(
+                  vector_clock:new(), a, 2),
+                b, 2),
+              c, 4), 
+            d, 3),
+          e, 1),
+    ?assertEqual(
+       lists:sort([a, c, e]), 
+       lists:sort(vector_clock:compare(VectorClockA, VectorClockB))),
+    ?assertEqual(
+       lists:sort([f, d]),
+       lists:sort(vector_clock:compare(VectorClockB, VectorClockA))),
+    ?assertEqual([], vector_clock:compare(VectorClockA, VectorClockA)).
+
